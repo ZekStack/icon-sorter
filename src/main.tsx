@@ -1,14 +1,17 @@
 import { StrictMode } from "react"
 import { createRoot } from "react-dom/client"
 
-import "./index.css"
 import App from "./App.tsx"
+import "./index.css"
 import { ThemeProvider } from "@/components/theme-provider.tsx"
+import { IconSorterProvider } from "@/lib/icon-sorter-store"
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <ThemeProvider>
-      <App />
+      <IconSorterProvider>
+        <App />
+      </IconSorterProvider>
     </ThemeProvider>
   </StrictMode>
 )

@@ -1,21 +1,21 @@
-# React + TypeScript + Vite + shadcn/ui
+# Hugeicons Sorter
 
-This is a template for a new Vite project with React, TypeScript, and shadcn/ui.
+A local-first React SPA for reviewing every icon from `@hugeicons/core-free-icons`, assigning it to a group, and building multilingual search metadata.
 
-## Adding components
-
-To add components to your app, run the following command:
+## Run locally
 
 ```bash
-npx shadcn@latest add button
+pnpm install
+pnpm dev
 ```
 
-This will place the ui components in the `src/components` directory.
+## Pages
 
-## Using components
+- `/` shows the next unseen icon, supports creating groups and keyword buckets at any time, and persists each assignment immediately.
+- `/library` displays saved icons by group and supports search, group creation/renaming, moving icons, editing keywords, returning icons to the sorting queue, and JSON export.
 
-To use the components in your app, import them as follows:
+## Persistence
 
-```tsx
-import { Button } from "@/components/ui/button"
-```
+The application stores its versioned dataset in `localStorage` under `icon-sorter.library.v1`. Exported JSON includes groups, saved icons, reviewed icon names, keyword bucket definitions, and an export timestamp.
+
+Removing an icon from the library also removes it from the reviewed set so it appears in the sorting queue again.
