@@ -4,12 +4,19 @@ import {
   ArchiveX,
   ArrowRight,
   Check,
+  ChevronDown,
   FolderPlus,
   Languages,
   Palette,
+  Trash2,
 } from "lucide-react"
 import { useTranslation } from "react-i18next"
 
+import {
+  ConfirmError,
+  useConfirm,
+} from "@/components/custom/confirm-dialog"
+import { useSelect } from "@/components/custom/select-dialog"
 import { KeywordFields } from "@/components/keyword-fields"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -20,7 +27,6 @@ import {
   useIconSorter,
   type IconKeywords,
 } from "@/lib/icon-sorter-store"
-import { cn } from "@/lib/utils"
 
 export function SortPage() {
   const {
@@ -31,6 +37,8 @@ export function SortPage() {
     assignIcon,
     discardIcon,
   } = useIconSorter()
+  const { confirm } = useConfirm()
+  const { select } = useSelect()
   const { t, i18n } = useTranslation()
   const [selectedGroupId, setSelectedGroupId] = useState("")
   const [groupName, setGroupName] = useState("")
@@ -48,6 +56,9 @@ export function SortPage() {
     }
   }, [data.groups, selectedGroupId])
 
+  const selectedGroup = data.groups.find(
+    (group) => group.id === selectedGroupId
+  )
   const reviewed = useMemo(
     () => new Set(data.reviewedIconNames),
     [data.reviewedIconNames]
@@ -93,8 +104,37 @@ export function SortPage() {
     setKeywordGroupName("")
   }
 
-  function handleRemoveKeywordGroup(group: string) {
-    if (!window.confirm(t("keywords.removeConfirm", { name: group }))) {
+  async function chooseGroup() {
+    const selected = await select({
+      items: data.groups,
+      itemValue: "id",
+      itemLabel: "name",
+      defaultValue: selectedGroup ?? null,
+      title: t("sort.selectGroup"),
+      description: t("sort.selectGroupDescription"),
+      search: data.groups.length > 8,
+      searchPlaceholder: t("common.search"),
+      emptyText: t("sort.firstGroup"),
+      saveLabel: t("common.select"),
+      cancelLabel: t("common.cancel"),
+    })
+
+    if (selected) {
+      setSelectedGroupId(selected.id)
+    }
+  }
+
+  async function handleRemoveKeywordGroup(group: string) {
+    const confirmed = await confirm({
+      label: t("keywords.removeTitle", { name: group }),
+      description: t("keywords.removeConfirm", { name: group }),
+      type: ConfirmError,
+      media: <Trash2 className="size-5" />,
+      confirmLabel: t("common.remove"),
+      cancelLabel: t("common.cancel"),
+      dismissible: false,
+    })
+    if (!confirmed) {
       return
     }
 
@@ -211,32 +251,23 @@ export function SortPage() {
             <div className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
               {t("sort.group")}
             </div>
-            <div className="grid max-h-52 gap-1 overflow-y-auto pr-1">
-              {data.groups.length === 0 ? (
-                <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
-                  {t("sort.firstGroup")}
-                </div>
-              ) : (
-                data.groups.map((group) => (
-                  <button
-                    key={group.id}
-                    type="button"
-                    className={cn(
-                      "flex min-h-10 items-center justify-between rounded-lg border px-3 text-left text-sm transition-colors",
-                      selectedGroupId === group.id
-                        ? "border-foreground bg-foreground text-background"
-                        : "hover:bg-muted"
-                    )}
-                    onClick={() => setSelectedGroupId(group.id)}
-                  >
-                    <span className="truncate">{group.name}</span>
-                    {selectedGroupId === group.id ? (
-                      <Check className="size-4" />
-                    ) : null}
-                  </button>
-                ))
-              )}
-            </div>
+            {data.groups.length === 0 ? (
+              <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+                {t("sort.firstGroup")}
+              </div>
+            ) : (
+              <Button
+                type="button"
+                variant="outline"
+                className="h-10 w-full justify-between px-3"
+                onClick={() => void chooseGroup()}
+              >
+                <span className="truncate">
+                  {selectedGroup?.name ?? t("sort.noGroupSelected")}
+                </span>
+                <ChevronDown />
+              </Button>
+            )}
             <form className="flex gap-2" onSubmit={handleAddGroup}>
               <Input
                 value={groupName}
@@ -281,7 +312,7 @@ export function SortPage() {
               groups={data.keywordGroups}
               value={keywords}
               onChange={setKeywords}
-              onRemoveGroup={handleRemoveKeywordGroup}
+              onRemoveGroup={(group) => void handleRemoveKeywordGroup(group)}
             />
             <form className="flex gap-2" onSubmit={handleAddKeywordGroup}>
               <Input
