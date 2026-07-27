@@ -35,6 +35,7 @@ export function SelectDialogProvider({
   const [activeRequest, setActiveRequest] =
     React.useState<ActiveSelectRequest | null>(null)
   const [open, setOpen] = React.useState(false)
+  const activeRequestRef = React.useRef<ActiveSelectRequest | null>(null)
   const closeTimeoutRef = React.useRef<number | null>(null)
 
   const clearCloseTimeout = React.useCallback(() => {
@@ -50,14 +51,17 @@ export function SelectDialogProvider({
     (props) =>
       new Promise((resolve) => {
         clearCloseTimeout()
-        setOpen(false)
-        setActiveRequest({
+        activeRequestRef.current?.resolve(undefined)
+        const nextRequest: ActiveSelectRequest = {
           id: createRequestId(),
           props: props as unknown as SelectDialogRequest<ItemsArray, boolean>,
           resolve: resolve as (
             value: SelectDialogValue<AnyItem, boolean> | undefined
           ) => void,
-        })
+        }
+        activeRequestRef.current = nextRequest
+        setOpen(false)
+        setActiveRequest(nextRequest)
       }),
     [clearCloseTimeout]
   )
@@ -76,9 +80,14 @@ export function SelectDialogProvider({
       clearCloseTimeout()
       closeTimeoutRef.current = window.setTimeout(() => {
         closeTimeoutRef.current = null
-        setActiveRequest((currentRequest) =>
-          currentRequest?.id === requestId ? null : currentRequest
-        )
+        setActiveRequest((currentRequest) => {
+          if (currentRequest?.id !== requestId) {
+            return currentRequest
+          }
+
+          activeRequestRef.current = null
+          return null
+        })
       }, SELECT_DIALOG_CLOSE_DELAY_MS)
     },
     [clearCloseTimeout]
@@ -87,9 +96,10 @@ export function SelectDialogProvider({
   React.useEffect(
     () => () => {
       clearCloseTimeout()
-      activeRequest?.resolve(undefined)
+      activeRequestRef.current?.resolve(undefined)
+      activeRequestRef.current = null
     },
-    [activeRequest, clearCloseTimeout]
+    [clearCloseTimeout]
   )
 
   return (
