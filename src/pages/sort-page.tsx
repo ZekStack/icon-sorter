@@ -1,6 +1,14 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react"
 import { HugeiconsIcon } from "@hugeicons/react"
-import { ArrowRight, Check, FolderPlus, Languages } from "lucide-react"
+import {
+  ArchiveX,
+  ArrowRight,
+  Check,
+  FolderPlus,
+  Languages,
+  Palette,
+} from "lucide-react"
+import { useTranslation } from "react-i18next"
 
 import { KeywordFields } from "@/components/keyword-fields"
 import { Badge } from "@/components/ui/badge"
@@ -8,17 +16,28 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { iconCatalog } from "@/lib/icon-catalog"
 import {
+  DEFAULT_ICON_COLOR,
   useIconSorter,
   type IconKeywords,
 } from "@/lib/icon-sorter-store"
 import { cn } from "@/lib/utils"
 
 export function SortPage() {
-  const { data, addGroup, addKeywordGroup, assignIcon } = useIconSorter()
+  const {
+    data,
+    addGroup,
+    addKeywordGroup,
+    removeKeywordGroup,
+    assignIcon,
+    discardIcon,
+  } = useIconSorter()
+  const { t, i18n } = useTranslation()
   const [selectedGroupId, setSelectedGroupId] = useState("")
   const [groupName, setGroupName] = useState("")
   const [keywordGroupName, setKeywordGroupName] = useState("")
   const [keywords, setKeywords] = useState<IconKeywords>({})
+  const [color, setColor] = useState(DEFAULT_ICON_COLOR)
+  const locale = i18n.language.startsWith("hu") ? "hu-HU" : "en-US"
 
   useEffect(() => {
     if (
@@ -37,16 +56,23 @@ export function SortPage() {
     () => iconCatalog.find((icon) => !reviewed.has(icon.name)),
     [reviewed]
   )
-  const remainingCount = Math.max(
-    iconCatalog.length - data.reviewedIconNames.length,
-    0
+  const remainingCount = useMemo(
+    () =>
+      iconCatalog.reduce(
+        (count, icon) => count + Number(!reviewed.has(icon.name)),
+        0
+      ),
+    [reviewed]
   )
+  const reviewedCount = iconCatalog.length - remainingCount
   const progress = iconCatalog.length
-    ? Math.min(
-        (data.reviewedIconNames.length / iconCatalog.length) * 100,
-        100
-      )
+    ? Math.min((reviewedCount / iconCatalog.length) * 100, 100)
     : 0
+
+  function resetIconFields() {
+    setKeywords({})
+    setColor(DEFAULT_ICON_COLOR)
+  }
 
   function handleAddGroup(event: FormEvent) {
     event.preventDefault()
@@ -67,6 +93,19 @@ export function SortPage() {
     setKeywordGroupName("")
   }
 
+  function handleRemoveKeywordGroup(group: string) {
+    if (!window.confirm(t("keywords.removeConfirm", { name: group }))) {
+      return
+    }
+
+    removeKeywordGroup(group)
+    setKeywords((current) => {
+      const nextKeywords = { ...current }
+      delete nextKeywords[group]
+      return nextKeywords
+    })
+  }
+
   function handleAssign() {
     if (!currentIcon || !selectedGroupId) {
       return
@@ -76,8 +115,18 @@ export function SortPage() {
       name: currentIcon.name,
       groupId: selectedGroupId,
       keywords,
+      color,
     })
-    setKeywords({})
+    resetIconFields()
+  }
+
+  function handleDiscard() {
+    if (!currentIcon) {
+      return
+    }
+
+    discardIcon(currentIcon.name, color)
+    resetIconFields()
   }
 
   if (!currentIcon) {
@@ -87,9 +136,9 @@ export function SortPage() {
           <div className="mx-auto grid size-14 place-items-center rounded-full bg-foreground text-background">
             <Check className="size-6" />
           </div>
-          <div className="text-lg font-semibold">Every icon is sorted.</div>
+          <div className="text-lg font-semibold">{t("sort.complete")}</div>
           <p className="text-sm text-muted-foreground">
-            Open the library to review, move, edit, remove, or export the result.
+            {t("sort.completeDescription")}
           </p>
         </div>
       </div>
@@ -109,10 +158,14 @@ export function SortPage() {
         <section className="flex min-h-[34rem] flex-col border-b lg:border-r lg:border-b-0">
           <div className="flex items-center justify-between border-b px-4 py-3 text-xs text-muted-foreground sm:px-6">
             <span>
-              {data.reviewedIconNames.length.toLocaleString()} /{" "}
-              {iconCatalog.length.toLocaleString()}
+              {reviewedCount.toLocaleString(locale)} /{" "}
+              {iconCatalog.length.toLocaleString(locale)}
             </span>
-            <Badge>{remainingCount.toLocaleString()} remaining</Badge>
+            <Badge>
+              {t("sort.remaining", {
+                count: remainingCount.toLocaleString(locale),
+              })}
+            </Badge>
           </div>
 
           <div className="grid flex-1 place-items-center px-4 py-10 sm:px-8">
@@ -122,6 +175,7 @@ export function SortPage() {
                   icon={currentIcon.icon}
                   size={124}
                   strokeWidth={1.35}
+                  color={color}
                 />
               </div>
               <div className="max-w-full font-mono text-sm font-medium break-all sm:text-base">
@@ -130,14 +184,23 @@ export function SortPage() {
             </div>
           </div>
 
-          <div className="border-t p-4 sm:p-6">
+          <div className="grid gap-2 border-t p-4 sm:grid-cols-[auto_minmax(0,1fr)] sm:p-6">
+            <Button
+              size="lg"
+              variant="outline"
+              onClick={handleDiscard}
+              aria-label={t("sort.discardAria", { name: currentIcon.name })}
+            >
+              <ArchiveX />
+              {t("sort.discard")}
+            </Button>
             <Button
               size="lg"
               className="w-full"
               disabled={!selectedGroupId}
               onClick={handleAssign}
             >
-              Assign and continue
+              {t("sort.assign")}
               <ArrowRight data-icon="inline-end" />
             </Button>
           </div>
@@ -146,12 +209,12 @@ export function SortPage() {
         <aside className="grid content-start divide-y">
           <section className="grid gap-3 p-4 sm:p-5">
             <div className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-              Group
+              {t("sort.group")}
             </div>
             <div className="grid max-h-52 gap-1 overflow-y-auto pr-1">
               {data.groups.length === 0 ? (
                 <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
-                  Create the first group before assigning this icon.
+                  {t("sort.firstGroup")}
                 </div>
               ) : (
                 data.groups.map((group) => (
@@ -177,14 +240,15 @@ export function SortPage() {
             <form className="flex gap-2" onSubmit={handleAddGroup}>
               <Input
                 value={groupName}
-                placeholder="New group"
+                placeholder={t("sort.newGroup")}
                 onChange={(event) => setGroupName(event.target.value)}
               />
               <Button
                 type="submit"
                 size="icon-lg"
                 variant="outline"
-                aria-label="Add group"
+                aria-label={t("sort.addGroup")}
+                title={t("sort.addGroup")}
               >
                 <FolderPlus />
               </Button>
@@ -193,22 +257,40 @@ export function SortPage() {
 
           <section className="grid gap-3 p-4 sm:p-5">
             <div className="flex items-center gap-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+              <Palette className="size-4" />
+              {t("sort.color")}
+            </div>
+            <label className="flex items-center gap-3 rounded-lg border p-2">
+              <input
+                type="color"
+                className="size-10 cursor-pointer rounded-md border-0 bg-transparent p-0"
+                value={color}
+                aria-label={t("sort.color")}
+                onChange={(event) => setColor(event.target.value)}
+              />
+              <span className="font-mono text-sm">{color}</span>
+            </label>
+          </section>
+
+          <section className="grid gap-3 p-4 sm:p-5">
+            <div className="flex items-center gap-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
               <Languages className="size-4" />
-              Keywords
+              {t("sort.keywords")}
             </div>
             <KeywordFields
               groups={data.keywordGroups}
               value={keywords}
               onChange={setKeywords}
+              onRemoveGroup={handleRemoveKeywordGroup}
             />
             <form className="flex gap-2" onSubmit={handleAddKeywordGroup}>
               <Input
                 value={keywordGroupName}
-                placeholder="Keyword bucket"
+                placeholder={t("sort.keywordBucket")}
                 onChange={(event) => setKeywordGroupName(event.target.value)}
               />
               <Button type="submit" variant="outline">
-                Add
+                {t("common.add")}
               </Button>
             </form>
           </section>
