@@ -5,6 +5,7 @@ import {
 } from "@tanstack/react-router"
 
 import { AppShell } from "@/components/app-shell"
+import { DiscardedPage } from "@/pages/discarded-page"
 import { LibraryPage } from "@/pages/library-page"
 import { SortPage } from "@/pages/sort-page"
 
@@ -25,7 +26,17 @@ const libraryRoute = createRoute({
   component: LibraryPage,
 })
 
-const routeTree = rootRoute.addChildren([sortRoute, libraryRoute])
+const discardedRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/discarded",
+  component: DiscardedPage,
+})
+
+const routeTree = rootRoute.addChildren([
+  sortRoute,
+  libraryRoute,
+  discardedRoute,
+])
 
 export const router = createRouter({ routeTree })
 
