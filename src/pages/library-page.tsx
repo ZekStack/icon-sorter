@@ -1,16 +1,30 @@
-import { useMemo, useState, type FormEvent } from "react"
+import {
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type FormEvent,
+} from "react"
 import { HugeiconsIcon } from "@hugeicons/react"
 import {
   ArchiveX,
+  ChevronDown,
   Download,
   FolderPlus,
   Pencil,
   Search,
   Trash2,
+  Upload,
   X,
 } from "lucide-react"
 import { useTranslation } from "react-i18next"
 
+import {
+  ConfirmError,
+  ConfirmWarning,
+  useConfirm,
+} from "@/components/custom/confirm-dialog"
+import { useSelect } from "@/components/custom/select-dialog"
 import { KeywordFields } from "@/components/keyword-fields"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -21,6 +35,11 @@ import {
   type IconKeywords,
   type SavedIcon,
 } from "@/lib/icon-sorter-store"
+
+type ImportNotice = {
+  type: "success" | "error"
+  message: string
+}
 
 export function LibraryPage() {
   const {
@@ -34,14 +53,18 @@ export function LibraryPage() {
     removeIcon,
     discardIcon,
     exportData,
+    importData,
   } = useIconSorter()
+  const { confirm } = useConfirm()
   const { t, i18n } = useTranslation()
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const [search, setSearch] = useState("")
   const [groupName, setGroupName] = useState("")
   const [editingIcon, setEditingIcon] = useState<SavedIcon | null>(null)
   const [editingKeywords, setEditingKeywords] = useState<IconKeywords>({})
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null)
   const [editingGroupName, setEditingGroupName] = useState("")
+  const [importNotice, setImportNotice] = useState<ImportNotice | null>(null)
   const locale = i18n.language.startsWith("hu") ? "hu-HU" : "en-US"
 
   const normalizedSearch = search.trim().toLowerCase()
@@ -59,6 +82,11 @@ export function LibraryPage() {
         .includes(normalizedSearch)
     })
   }, [data.groups, data.icons, normalizedSearch])
+
+  const hasExportableData =
+    data.groups.length > 0 ||
+    data.icons.length > 0 ||
+    data.discardedIcons.length > 0
 
   function handleAddGroup(event: FormEvent) {
     event.preventDefault()
@@ -82,13 +110,21 @@ export function LibraryPage() {
     setEditingGroupName("")
   }
 
-  function handleRemoveGroup(groupId: string, name: string) {
+  async function handleRemoveGroup(groupId: string, name: string) {
     const iconCount = data.icons.filter((icon) => icon.groupId === groupId).length
-    if (
-      !window.confirm(
-        t("library.removeGroupConfirm", { name, count: iconCount })
-      )
-    ) {
+    const confirmed = await confirm({
+      label: t("library.removeGroupTitle", { name }),
+      description: t("library.removeGroupConfirm", {
+        name,
+        count: iconCount,
+      }),
+      type: ConfirmError,
+      media: <Trash2 className="size-5" />,
+      confirmLabel: t("common.remove"),
+      cancelLabel: t("common.cancel"),
+      dismissible: false,
+    })
+    if (!confirmed) {
       return
     }
 
@@ -99,8 +135,17 @@ export function LibraryPage() {
     }
   }
 
-  function handleRemoveKeywordGroup(group: string) {
-    if (!window.confirm(t("keywords.removeConfirm", { name: group }))) {
+  async function handleRemoveKeywordGroup(group: string) {
+    const confirmed = await confirm({
+      label: t("keywords.removeTitle", { name: group }),
+      description: t("keywords.removeConfirm", { name: group }),
+      type: ConfirmError,
+      media: <Trash2 className="size-5" />,
+      confirmLabel: t("common.remove"),
+      cancelLabel: t("common.cancel"),
+      dismissible: false,
+    })
+    if (!confirmed) {
       return
     }
 
@@ -110,6 +155,46 @@ export function LibraryPage() {
       delete nextKeywords[group]
       return nextKeywords
     })
+  }
+
+  async function handleImportFile(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    event.target.value = ""
+    if (!file) {
+      return
+    }
+
+    setImportNotice(null)
+    try {
+      const payload = JSON.parse(await file.text()) as unknown
+      const confirmed = await confirm({
+        label: t("library.importTitle"),
+        description: t("library.importDescription", { name: file.name }),
+        type: ConfirmWarning,
+        media: <Upload className="size-5" />,
+        confirmLabel: t("library.import"),
+        cancelLabel: t("common.cancel"),
+        dismissible: false,
+      })
+      if (!confirmed) {
+        return
+      }
+
+      const result = importData(payload)
+      setEditingIcon(null)
+      setEditingGroupId(null)
+      setSearch("")
+      setImportNotice({
+        type: "success",
+        message: t("library.importSuccess", result),
+      })
+    } catch (error) {
+      const message =
+        error instanceof Error && error.message === "unsupported-type"
+          ? t("library.importUnsupported")
+          : t("library.importInvalid")
+      setImportNotice({ type: "error", message })
+    }
   }
 
   function openIconEditor(icon: SavedIcon) {
@@ -128,7 +213,7 @@ export function LibraryPage() {
   return (
     <>
       <div className="grid gap-4">
-        <div className="flex flex-col gap-2 sm:flex-row">
+        <div className="flex flex-col gap-2 lg:flex-row">
           <label className="relative flex-1">
             <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -140,7 +225,7 @@ export function LibraryPage() {
           </label>
           <form className="flex gap-2" onSubmit={handleAddGroup}>
             <Input
-              className="sm:w-48"
+              className="lg:w-48"
               value={groupName}
               placeholder={t("library.newGroup")}
               onChange={(event) => setGroupName(event.target.value)}
@@ -154,11 +239,40 @@ export function LibraryPage() {
               <span className="hidden sm:inline">{t("library.addGroup")}</span>
             </Button>
           </form>
-          <Button onClick={exportData} disabled={data.icons.length === 0}>
-            <Download />
-            {t("library.export")}
-          </Button>
+          <div className="grid grid-cols-2 gap-2 sm:flex">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="application/json,.json"
+              className="hidden"
+              onChange={(event) => void handleImportFile(event)}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <Upload />
+              {t("library.import")}
+            </Button>
+            <Button onClick={exportData} disabled={!hasExportableData}>
+              <Download />
+              {t("library.export")}
+            </Button>
+          </div>
         </div>
+
+        {importNotice ? (
+          <div
+            className={
+              importNotice.type === "success"
+                ? "rounded-lg border border-emerald-500/25 bg-emerald-500/5 px-3 py-2 text-sm text-emerald-700 dark:text-emerald-300"
+                : "rounded-lg border border-destructive/25 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+            }
+          >
+            {importNotice.message}
+          </div>
+        ) : null}
 
         <div className="flex flex-wrap items-center gap-2 border-y py-3 text-xs text-muted-foreground">
           <Badge>
@@ -189,7 +303,7 @@ export function LibraryPage() {
                     className="rounded-full"
                     aria-label={t("keywords.remove", { name: group })}
                     title={t("keywords.remove", { name: group })}
-                    onClick={() => handleRemoveKeywordGroup(group)}
+                    onClick={() => void handleRemoveKeywordGroup(group)}
                   >
                     <X />
                   </Button>
@@ -264,7 +378,9 @@ export function LibraryPage() {
                           title={t("library.removeGroup", {
                             name: group.name,
                           })}
-                          onClick={() => handleRemoveGroup(group.id, group.name)}
+                          onClick={() =>
+                            void handleRemoveGroup(group.id, group.name)
+                          }
                         >
                           <Trash2 />
                         </Button>
@@ -302,7 +418,7 @@ export function LibraryPage() {
 
       {editingIcon ? (
         <div
-          className="fixed inset-0 z-50 grid place-items-end bg-black/40 p-0 sm:place-items-center sm:p-6"
+          className="fixed inset-0 z-40 grid place-items-end bg-black/40 p-0 sm:place-items-center sm:p-6"
           role="presentation"
           onMouseDown={(event) => {
             if (event.target === event.currentTarget) {
@@ -376,8 +492,45 @@ function IconRow({
   onRemove: () => void
   onDiscard: () => void
 }) {
+  const { confirm } = useConfirm()
+  const { select } = useSelect()
   const { t } = useTranslation()
   const keywordCount = Object.values(icon.keywords).flat().length
+  const currentGroup = groups.find((group) => group.id === icon.groupId)
+
+  async function chooseGroup() {
+    const selected = await select({
+      items: groups,
+      itemValue: "id",
+      itemLabel: "name",
+      defaultValue: currentGroup ?? null,
+      title: t("library.moveIcon", { name: icon.name }),
+      description: t("library.moveIconDescription"),
+      search: groups.length > 8,
+      searchPlaceholder: t("common.search"),
+      saveLabel: t("common.select"),
+      cancelLabel: t("common.cancel"),
+    })
+
+    if (selected && selected.id !== icon.groupId) {
+      onMove(selected.id)
+    }
+  }
+
+  async function remove() {
+    const confirmed = await confirm({
+      label: t("library.removeIconTitle", { name: icon.name }),
+      description: t("library.removeIconDescription"),
+      type: ConfirmError,
+      media: <Trash2 className="size-5" />,
+      confirmLabel: t("common.remove"),
+      cancelLabel: t("common.cancel"),
+      dismissible: false,
+    })
+    if (confirmed) {
+      onRemove()
+    }
+  }
 
   return (
     <article className="grid grid-cols-[4rem_minmax(0,1fr)] gap-3 bg-background p-3">
@@ -397,18 +550,17 @@ function IconRow({
           </div>
         </div>
         <div className="flex items-center gap-1.5">
-          <select
-            className="h-8 min-w-0 flex-1 rounded-lg border border-input bg-background px-2 text-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-            value={icon.groupId}
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="min-w-0 flex-1 justify-between px-2"
             aria-label={t("library.moveIcon", { name: icon.name })}
-            onChange={(event) => onMove(event.target.value)}
+            onClick={() => void chooseGroup()}
           >
-            {groups.map((group) => (
-              <option key={group.id} value={group.id}>
-                {group.name}
-              </option>
-            ))}
-          </select>
+            <span className="truncate">{currentGroup?.name ?? "—"}</span>
+            <ChevronDown />
+          </Button>
           <Button
             size="icon-sm"
             variant="outline"
@@ -432,7 +584,7 @@ function IconRow({
             variant="destructive"
             aria-label={t("library.removeIcon", { name: icon.name })}
             title={t("library.removeIcon", { name: icon.name })}
-            onClick={onRemove}
+            onClick={() => void remove()}
           >
             <Trash2 />
           </Button>

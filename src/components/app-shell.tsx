@@ -1,8 +1,16 @@
 import { useEffect } from "react"
 import { Link, Outlet } from "@tanstack/react-router"
-import { ArchiveX, Grid2X2, ListFilter, Moon, Sun } from "lucide-react"
+import {
+  ArchiveX,
+  Grid2X2,
+  Languages,
+  ListFilter,
+  Moon,
+  Sun,
+} from "lucide-react"
 import { useTranslation } from "react-i18next"
 
+import { useSelect } from "@/components/custom/select-dialog"
 import { useTheme } from "@/components/theme-provider"
 import { Button } from "@/components/ui/button"
 import { useIconSorter } from "@/lib/icon-sorter-store"
@@ -16,6 +24,7 @@ const links = [
 
 export function AppShell() {
   const { data } = useIconSorter()
+  const { select } = useSelect()
   const { theme, setTheme } = useTheme()
   const { t, i18n } = useTranslation()
   const language = i18n.language.startsWith("hu") ? "hu" : "en"
@@ -27,6 +36,27 @@ export function AppShell() {
   useEffect(() => {
     document.documentElement.lang = language
   }, [language])
+
+  async function selectLanguage() {
+    const languages = [
+      { id: "en", label: t("language.en"), shortLabel: "EN" },
+      { id: "hu", label: t("language.hu"), shortLabel: "HU" },
+    ] as const
+    const selected = await select({
+      items: languages,
+      itemValue: "id",
+      itemLabel: "label",
+      defaultValue: languages.find((item) => item.id === language) ?? null,
+      title: t("language.label"),
+      search: false,
+      saveLabel: t("common.select"),
+      cancelLabel: t("common.cancel"),
+    })
+
+    if (selected) {
+      await i18n.changeLanguage(selected.id)
+    }
+  }
 
   return (
     <div className="min-h-svh bg-background">
@@ -64,19 +94,16 @@ export function AppShell() {
           </div>
 
           <div className="ml-auto flex items-center gap-1 xl:ml-2">
-            <label className="sr-only" htmlFor="app-language">
-              {t("language.label")}
-            </label>
-            <select
-              id="app-language"
-              className="h-8 rounded-lg border border-input bg-background px-2 text-xs font-medium outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-              value={language}
+            <Button
+              size="sm"
+              variant="ghost"
               aria-label={t("language.label")}
-              onChange={(event) => void i18n.changeLanguage(event.target.value)}
+              title={t("language.label")}
+              onClick={() => void selectLanguage()}
             >
-              <option value="en">EN</option>
-              <option value="hu">HU</option>
-            </select>
+              <Languages />
+              <span>{language.toUpperCase()}</span>
+            </Button>
             <Button
               size="icon"
               variant="ghost"

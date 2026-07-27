@@ -11,7 +11,11 @@ import {
 
 const STORAGE_KEY = "icon-sorter.library.v1"
 const DEFAULT_KEYWORD_GROUPS = ["hu", "en"]
-export const DEFAULT_ICON_COLOR = "#18181b"
+
+export const ICON_LIBRARY_TYPE = "Huge icons" as const
+export const DEFAULT_ICON_COLOR = "#a1a1aa"
+
+export type IconLibraryType = typeof ICON_LIBRARY_TYPE
 
 export type IconGroup = {
   id: string
@@ -22,6 +26,7 @@ export type IconGroup = {
 export type IconKeywords = Record<string, string[]>
 
 export type SavedIcon = {
+  type: IconLibraryType
   name: string
   groupId: string
   keywords: IconKeywords
@@ -30,6 +35,7 @@ export type SavedIcon = {
 }
 
 export type DiscardedIcon = {
+  type: IconLibraryType
   name: string
   color: string
   discardedAt: string
@@ -37,12 +43,23 @@ export type DiscardedIcon = {
 }
 
 export type IconSorterData = {
-  version: 2
+  version: 3
+  type: IconLibraryType
   groups: IconGroup[]
   icons: SavedIcon[]
   discardedIcons: DiscardedIcon[]
   reviewedIconNames: string[]
   keywordGroups: string[]
+}
+
+export type IconSorterImportResult = {
+  groups: number
+  icons: number
+  discardedIcons: number
+}
+
+type AssignIconInput = Omit<SavedIcon, "savedAt" | "type"> & {
+  type?: IconLibraryType
 }
 
 type IconSorterContextValue = {
@@ -52,17 +69,17 @@ type IconSorterContextValue = {
   removeGroup: (groupId: string) => void
   addKeywordGroup: (name: string) => void
   removeKeywordGroup: (name: string) => void
-  assignIcon: (icon: Omit<SavedIcon, "savedAt">) => void
+  assignIcon: (icon: AssignIconInput) => void
   moveIcon: (iconName: string, groupId: string) => void
   updateIconKeywords: (iconName: string, keywords: IconKeywords) => void
   removeIcon: (iconName: string) => void
   discardIcon: (iconName: string, color?: string) => void
   restoreDiscardedIcon: (iconName: string) => void
   exportData: () => void
+  importData: (payload: unknown) => IconSorterImportResult
 }
 
-type StoredData = Partial<IconSorterData> & {
-  version?: number
+type StoredData = Record<string, unknown> & {
   discardedIconNames?: unknown
 }
 
@@ -70,7 +87,8 @@ const IconSorterContext = createContext<IconSorterContextValue | null>(null)
 
 function createEmptyData(): IconSorterData {
   return {
-    version: 2,
+    version: 3,
+    type: ICON_LIBRARY_TYPE,
     groups: [],
     icons: [],
     discardedIcons: [],
@@ -80,7 +98,15 @@ function createEmptyData(): IconSorterData {
 }
 
 function createId() {
-  return crypto.randomUUID()
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID()
+  }
+
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value)
 }
 
 function normalizeName(value: string) {
@@ -97,13 +123,208 @@ function normalizeColor(value: unknown) {
     : DEFAULT_ICON_COLOR
 }
 
-function normalizeKeywords(keywords: IconKeywords): IconKeywords {
+function normalizeKeywords(value: unknown): IconKeywords {
+  if (!isRecord(value)) {
+    return {}
+  }
+
   return Object.fromEntries(
-    Object.entries(keywords).map(([group, values]) => [
-      normalizeName(group).toLowerCase(),
-      uniqueValues(values),
-    ])
+    Object.entries(value).flatMap(([group, keywords]) => {
+      const normalizedGroup = normalizeName(group).toLowerCase()
+      if (!normalizedGroup || !Array.isArray(keywords)) {
+        return []
+      }
+
+      return [
+        [
+          normalizedGroup,
+          uniqueValues(
+            keywords.filter(
+              (keyword): keyword is string => typeof keyword === "string"
+            )
+          ),
+        ],
+      ]
+    })
   )
+}
+
+function assertSupportedType(value: unknown, strict: boolean) {
+  if (value === undefined || value === ICON_LIBRARY_TYPE) {
+    return
+  }
+
+  if (strict) {
+    throw new Error("unsupported-type")
+  }
+}
+
+function normalizeGroups(value: unknown): IconGroup[] {
+  if (!Array.isArray(value)) {
+    return []
+  }
+
+  const groups = new Map<string, IconGroup>()
+  for (const candidate of value) {
+    if (!isRecord(candidate)) {
+      continue
+    }
+
+    const id = typeof candidate.id === "string" ? candidate.id.trim() : ""
+    const name =
+      typeof candidate.name === "string" ? normalizeName(candidate.name) : ""
+    if (!id || !name || groups.has(id)) {
+      continue
+    }
+
+    groups.set(id, {
+      id,
+      name,
+      createdAt:
+        typeof candidate.createdAt === "string"
+          ? candidate.createdAt
+          : new Date().toISOString(),
+    })
+  }
+
+  return [...groups.values()]
+}
+
+function normalizeSavedIcon(
+  value: unknown,
+  groupIds: Set<string>,
+  strict: boolean
+): SavedIcon | null {
+  if (!isRecord(value)) {
+    return null
+  }
+
+  assertSupportedType(value.type, strict)
+
+  const name = typeof value.name === "string" ? value.name.trim() : ""
+  const groupId =
+    typeof value.groupId === "string" ? value.groupId.trim() : ""
+  if (!name || !groupId || !groupIds.has(groupId)) {
+    return null
+  }
+
+  return {
+    type: ICON_LIBRARY_TYPE,
+    name,
+    groupId,
+    keywords: normalizeKeywords(value.keywords),
+    color: normalizeColor(value.color),
+    savedAt:
+      typeof value.savedAt === "string"
+        ? value.savedAt
+        : new Date().toISOString(),
+  }
+}
+
+function normalizeDiscardedIcon(
+  value: unknown,
+  groupIds: Set<string>,
+  strict: boolean
+): DiscardedIcon | null {
+  if (!isRecord(value)) {
+    return null
+  }
+
+  assertSupportedType(value.type, strict)
+
+  const name = typeof value.name === "string" ? value.name.trim() : ""
+  if (!name) {
+    return null
+  }
+
+  const previousIcon = normalizeSavedIcon(value.previousIcon, groupIds, strict)
+  return {
+    type: ICON_LIBRARY_TYPE,
+    name,
+    color: previousIcon?.color ?? normalizeColor(value.color),
+    discardedAt:
+      typeof value.discardedAt === "string"
+        ? value.discardedAt
+        : new Date().toISOString(),
+    previousIcon: previousIcon ?? undefined,
+  }
+}
+
+function normalizeData(payload: unknown, strict: boolean): IconSorterData {
+  if (!isRecord(payload)) {
+    throw new Error("invalid-data")
+  }
+
+  const parsed = payload as StoredData
+  assertSupportedType(parsed.type, strict)
+
+  const groups = normalizeGroups(parsed.groups)
+  const groupIds = new Set(groups.map((group) => group.id))
+
+  const iconsByName = new Map<string, SavedIcon>()
+  if (Array.isArray(parsed.icons)) {
+    for (const candidate of parsed.icons) {
+      const icon = normalizeSavedIcon(candidate, groupIds, strict)
+      if (icon && !iconsByName.has(icon.name)) {
+        iconsByName.set(icon.name, icon)
+      }
+    }
+  }
+
+  const discardedByName = new Map<string, DiscardedIcon>()
+  if (Array.isArray(parsed.discardedIcons)) {
+    for (const candidate of parsed.discardedIcons) {
+      const icon = normalizeDiscardedIcon(candidate, groupIds, strict)
+      if (icon && !discardedByName.has(icon.name)) {
+        discardedByName.set(icon.name, icon)
+      }
+    }
+  } else if (Array.isArray(parsed.discardedIconNames)) {
+    for (const name of parsed.discardedIconNames) {
+      if (typeof name === "string" && name.trim()) {
+        discardedByName.set(name.trim(), {
+          type: ICON_LIBRARY_TYPE,
+          name: name.trim(),
+          color: DEFAULT_ICON_COLOR,
+          discardedAt: new Date().toISOString(),
+        })
+      }
+    }
+  }
+
+  for (const discardedName of discardedByName.keys()) {
+    iconsByName.delete(discardedName)
+  }
+
+  const icons = [...iconsByName.values()]
+  const discardedIcons = [...discardedByName.values()]
+  const reviewedIconNames = uniqueValues([
+    ...(Array.isArray(parsed.reviewedIconNames)
+      ? parsed.reviewedIconNames.filter(
+          (name): name is string => typeof name === "string"
+        )
+      : []),
+    ...icons.map((icon) => icon.name),
+    ...discardedIcons.map((icon) => icon.name),
+  ])
+
+  const keywordGroups = Array.isArray(parsed.keywordGroups)
+    ? uniqueValues(
+        parsed.keywordGroups
+          .filter((group): group is string => typeof group === "string")
+          .map((group) => group.toLowerCase())
+      )
+    : DEFAULT_KEYWORD_GROUPS
+
+  return {
+    version: 3,
+    type: ICON_LIBRARY_TYPE,
+    groups,
+    icons,
+    discardedIcons,
+    reviewedIconNames,
+    keywordGroups,
+  }
 }
 
 function removeKeywordFromIcon(icon: SavedIcon, keywordGroup: string) {
@@ -115,82 +336,7 @@ function removeKeywordFromIcon(icon: SavedIcon, keywordGroup: string) {
 function loadData(): IconSorterData {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) {
-      return createEmptyData()
-    }
-
-    const parsed = JSON.parse(raw) as StoredData
-    const groups = Array.isArray(parsed.groups) ? parsed.groups : []
-    const groupIds = new Set(groups.map((group) => group.id))
-    const icons = Array.isArray(parsed.icons)
-      ? parsed.icons
-          .filter(
-            (icon): icon is SavedIcon =>
-              Boolean(icon) &&
-              typeof icon.name === "string" &&
-              typeof icon.groupId === "string" &&
-              groupIds.has(icon.groupId)
-          )
-          .map((icon) => ({
-            ...icon,
-            color: normalizeColor(icon.color),
-            keywords: normalizeKeywords(icon.keywords ?? {}),
-          }))
-      : []
-
-    const discardedIcons = Array.isArray(parsed.discardedIcons)
-      ? parsed.discardedIcons
-          .filter(
-            (icon): icon is DiscardedIcon =>
-              Boolean(icon) && typeof icon.name === "string"
-          )
-          .map((icon) => ({
-            ...icon,
-            color: normalizeColor(icon.color),
-            previousIcon: icon.previousIcon
-              ? {
-                  ...icon.previousIcon,
-                  color: normalizeColor(icon.previousIcon.color),
-                  keywords: normalizeKeywords(icon.previousIcon.keywords ?? {}),
-                }
-              : undefined,
-          }))
-      : Array.isArray(parsed.discardedIconNames)
-        ? parsed.discardedIconNames
-            .filter((name): name is string => typeof name === "string")
-            .map((name) => ({
-              name,
-              color: DEFAULT_ICON_COLOR,
-              discardedAt: new Date().toISOString(),
-            }))
-        : []
-
-    const discardedNames = new Set(discardedIcons.map((icon) => icon.name))
-    const normalizedIcons = icons.filter((icon) => !discardedNames.has(icon.name))
-    const reviewedIconNames = uniqueValues([
-      ...(Array.isArray(parsed.reviewedIconNames)
-        ? parsed.reviewedIconNames.filter(
-            (name): name is string => typeof name === "string"
-          )
-        : []),
-      ...normalizedIcons.map((icon) => icon.name),
-      ...discardedIcons.map((icon) => icon.name),
-    ])
-
-    return {
-      version: 2,
-      groups,
-      icons: normalizedIcons,
-      discardedIcons,
-      reviewedIconNames,
-      keywordGroups: Array.isArray(parsed.keywordGroups)
-        ? uniqueValues(
-            parsed.keywordGroups
-              .filter((group): group is string => typeof group === "string")
-              .map((group) => group.toLowerCase())
-          )
-        : DEFAULT_KEYWORD_GROUPS,
-    }
+    return raw ? normalizeData(JSON.parse(raw), false) : createEmptyData()
   } catch {
     return createEmptyData()
   }
@@ -302,7 +448,7 @@ export function IconSorterProvider({ children }: { children: ReactNode }) {
     }))
   }, [])
 
-  const assignIcon = useCallback((icon: Omit<SavedIcon, "savedAt">) => {
+  const assignIcon = useCallback((icon: AssignIconInput) => {
     setData((current) => {
       if (current.reviewedIconNames.includes(icon.name)) {
         return current
@@ -314,6 +460,7 @@ export function IconSorterProvider({ children }: { children: ReactNode }) {
           ...current.icons,
           {
             ...icon,
+            type: ICON_LIBRARY_TYPE,
             color: normalizeColor(icon.color),
             keywords: normalizeKeywords(icon.keywords),
             savedAt: new Date().toISOString(),
@@ -325,12 +472,18 @@ export function IconSorterProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const moveIcon = useCallback((iconName: string, groupId: string) => {
-    setData((current) => ({
-      ...current,
-      icons: current.icons.map((icon) =>
-        icon.name === iconName ? { ...icon, groupId } : icon
-      ),
-    }))
+    setData((current) => {
+      if (!current.groups.some((group) => group.id === groupId)) {
+        return current
+      }
+
+      return {
+        ...current,
+        icons: current.icons.map((icon) =>
+          icon.name === iconName ? { ...icon, groupId } : icon
+        ),
+      }
+    })
   }, [])
 
   const updateIconKeywords = useCallback(
@@ -374,6 +527,7 @@ export function IconSorterProvider({ children }: { children: ReactNode }) {
           discardedIcons: [
             ...current.discardedIcons,
             {
+              type: ICON_LIBRARY_TYPE,
               name: iconName,
               color: previousIcon?.color ?? normalizeColor(color),
               discardedAt: new Date().toISOString(),
@@ -439,6 +593,16 @@ export function IconSorterProvider({ children }: { children: ReactNode }) {
     window.setTimeout(() => URL.revokeObjectURL(url), 0)
   }, [data])
 
+  const importData = useCallback((payload: unknown) => {
+    const imported = normalizeData(payload, true)
+    setData(imported)
+    return {
+      groups: imported.groups.length,
+      icons: imported.icons.length,
+      discardedIcons: imported.discardedIcons.length,
+    }
+  }, [])
+
   const value = useMemo(
     () => ({
       data,
@@ -454,6 +618,7 @@ export function IconSorterProvider({ children }: { children: ReactNode }) {
       discardIcon,
       restoreDiscardedIcon,
       exportData,
+      importData,
     }),
     [
       data,
@@ -469,6 +634,7 @@ export function IconSorterProvider({ children }: { children: ReactNode }) {
       discardIcon,
       restoreDiscardedIcon,
       exportData,
+      importData,
     ]
   )
 

@@ -30,6 +30,7 @@ const resources = {
         save: "Save",
         cancel: "Cancel",
         search: "Search",
+        select: "Select",
         remove: "Remove",
         discard: "Discard",
         restore: "Restore",
@@ -37,6 +38,7 @@ const resources = {
       keywords: {
         placeholder: "door, entrance, access",
         remove: "Remove {{name}} keyword bucket",
+        removeTitle: "Remove the {{name}} keyword bucket?",
         removeConfirm:
           "Remove the {{name}} keyword bucket from every saved and discarded icon?",
       },
@@ -50,6 +52,9 @@ const resources = {
         discardAria: "Discard {{name}}",
         group: "Group",
         firstGroup: "Create the first group before assigning this icon.",
+        selectGroup: "Select a group",
+        selectGroupDescription: "Choose where this icon should be stored.",
+        noGroupSelected: "No group selected",
         newGroup: "New group",
         addGroup: "Add group",
         keywords: "Keywords",
@@ -61,7 +66,16 @@ const resources = {
         search: "Search names, groups, or keywords",
         newGroup: "New group",
         addGroup: "Add group",
+        import: "Import JSON",
         export: "Export JSON",
+        importTitle: "Replace the current library?",
+        importDescription:
+          "Import {{name}} and replace all currently saved groups, icons, keywords, and discarded icons.",
+        importSuccess:
+          "Imported {{groups}} groups, {{icons}} saved icons, and {{discardedIcons}} discarded icons.",
+        importUnsupported:
+          "This save uses an unsupported icon library type. Only Huge icons saves can be imported.",
+        importInvalid: "The selected file is not a valid icon-sorter save.",
         visible: "{{count}} visible",
         savedTotal: "{{count}} saved total",
         noGroups: "No groups yet. Create one here or start sorting icons.",
@@ -71,6 +85,7 @@ const resources = {
         cancelGroupEdit: "Cancel group editing",
         renameGroup: "Rename {{name}}",
         removeGroup: "Remove {{name}}",
+        removeGroupTitle: "Remove the {{name}} group?",
         removeGroupConfirm:
           "Remove {{name}}? Its {{count}} saved icon(s) will return to the sorting queue.",
         editDialog: "Edit {{name}}",
@@ -80,8 +95,12 @@ const resources = {
         keywordCount_one: "{{count}} keyword",
         keywordCount_other: "{{count}} keywords",
         moveIcon: "Move {{name}}",
+        moveIconDescription: "Select the destination group for this icon.",
         editKeywords: "Edit {{name}} keywords",
         removeIcon: "Remove {{name}} and return it to the queue",
+        removeIconTitle: "Remove {{name}}?",
+        removeIconDescription:
+          "The icon will be removed from the library and returned to the sorting queue.",
         discardIcon: "Discard {{name}}",
         keywordBuckets: "Keyword buckets",
       },
@@ -123,6 +142,7 @@ const resources = {
         save: "Mentés",
         cancel: "Mégse",
         search: "Keresés",
+        select: "Kiválasztás",
         remove: "Eltávolítás",
         discard: "Elvetés",
         restore: "Visszaállítás",
@@ -130,6 +150,7 @@ const resources = {
       keywords: {
         placeholder: "ajtó, bejárat, hozzáférés",
         remove: "{{name}} kulcsszómező eltávolítása",
+        removeTitle: "Eltávolítod a(z) {{name}} kulcsszómezőt?",
         removeConfirm:
           "Eltávolítod a(z) {{name}} kulcsszómezőt minden mentett és elvetett ikonból?",
       },
@@ -143,6 +164,9 @@ const resources = {
         discardAria: "{{name}} elvetése",
         group: "Csoport",
         firstGroup: "Az ikon hozzárendelése előtt hozz létre egy csoportot.",
+        selectGroup: "Csoport kiválasztása",
+        selectGroupDescription: "Válaszd ki, melyik csoportba kerüljön az ikon.",
+        noGroupSelected: "Nincs kiválasztott csoport",
         newGroup: "Új csoport",
         addGroup: "Csoport hozzáadása",
         keywords: "Kulcsszavak",
@@ -154,7 +178,16 @@ const resources = {
         search: "Keresés név, csoport vagy kulcsszó alapján",
         newGroup: "Új csoport",
         addGroup: "Csoport hozzáadása",
+        import: "JSON importálása",
         export: "JSON exportálása",
+        importTitle: "Lecseréled a jelenlegi könyvtárat?",
+        importDescription:
+          "A(z) {{name}} importálása lecseréli az összes jelenlegi csoportot, ikont, kulcsszót és elvetett ikont.",
+        importSuccess:
+          "Importálva: {{groups}} csoport, {{icons}} mentett ikon és {{discardedIcons}} elvetett ikon.",
+        importUnsupported:
+          "Ez a mentés nem támogatott ikontípust használ. Jelenleg csak Huge icons mentés importálható.",
+        importInvalid: "A kiválasztott fájl nem érvényes icon-sorter mentés.",
         visible: "{{count}} látható",
         savedTotal: "Összesen {{count}} mentett",
         noGroups:
@@ -165,6 +198,7 @@ const resources = {
         cancelGroupEdit: "Csoport szerkesztésének megszakítása",
         renameGroup: "{{name}} átnevezése",
         removeGroup: "{{name}} eltávolítása",
+        removeGroupTitle: "Eltávolítod a(z) {{name}} csoportot?",
         removeGroupConfirm:
           "Eltávolítod a(z) {{name}} csoportot? A benne lévő {{count}} mentett ikon visszakerül a rendezési sorba.",
         editDialog: "{{name}} szerkesztése",
@@ -174,9 +208,13 @@ const resources = {
         keywordCount_one: "{{count}} kulcsszó",
         keywordCount_other: "{{count}} kulcsszó",
         moveIcon: "{{name}} áthelyezése",
+        moveIconDescription: "Válaszd ki az ikon célcsoportját.",
         editKeywords: "{{name}} kulcsszavainak szerkesztése",
         removeIcon:
           "{{name}} eltávolítása és visszaküldése a rendezési sorba",
+        removeIconTitle: "Eltávolítod a(z) {{name}} ikont?",
+        removeIconDescription:
+          "Az ikon kikerül a könyvtárból, és visszakerül a rendezési sorba.",
         discardIcon: "{{name}} elvetése",
         keywordBuckets: "Kulcsszómezők",
       },
