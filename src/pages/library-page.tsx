@@ -86,10 +86,7 @@ export function LibraryPage() {
     })
   }, [data.groups, data.icons, iconTypeFilter, normalizedSearch])
 
-  const hasExportableData =
-    data.groups.length > 0 ||
-    data.icons.length > 0 ||
-    data.discardedIcons.length > 0
+  const hasExportableData = data.icons.length > 0
 
   function handleAddGroup(event: FormEvent) {
     event.preventDefault()

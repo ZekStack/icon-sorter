@@ -3,7 +3,6 @@ import {
   ArchiveX,
   ArrowRight,
   Check,
-  ChevronDown,
   FolderPlus,
   Languages,
   Palette,
@@ -13,7 +12,6 @@ import { useTranslation } from "react-i18next"
 import { IconPreview } from "@/components/icon-preview"
 import { IconTypeBadge } from "@/components/icon-type-badge"
 import { IconTypeFilterControl } from "@/components/icon-type-filter"
-import { useSelect } from "@/components/custom/select-dialog"
 import { KeywordTextarea } from "@/components/keyword-textarea"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -22,10 +20,10 @@ import { iconCatalog, type IconTypeFilter } from "@/lib/icon-catalog"
 import { parseKeywordText } from "@/lib/icon-keywords"
 import { iconId } from "@/lib/icon-sorter-data"
 import { DEFAULT_ICON_COLOR, useIconSorter } from "@/lib/icon-sorter-store"
+import { cn } from "@/lib/utils"
 
 export function SortPage() {
   const { data, addGroup, assignIcon, discardIcon } = useIconSorter()
-  const { select } = useSelect()
   const { t, i18n } = useTranslation()
   const [selectedGroupId, setSelectedGroupId] = useState("")
   const [groupName, setGroupName] = useState("")
@@ -76,26 +74,6 @@ export function SortPage() {
     if (newGroupId) {
       setSelectedGroupId(newGroupId)
       setGroupName("")
-    }
-  }
-
-  async function chooseGroup() {
-    const selected = await select({
-      items: data.groups,
-      itemValue: "id",
-      itemLabel: "name",
-      defaultValue: selectedGroup ?? null,
-      title: t("sort.selectGroup"),
-      description: t("sort.selectGroupDescription"),
-      search: data.groups.length > 8,
-      searchPlaceholder: t("common.search"),
-      emptyText: t("sort.firstGroup"),
-      saveLabel: t("common.select"),
-      cancelLabel: t("common.cancel"),
-    })
-
-    if (selected) {
-      setSelectedGroupId(selected.id)
     }
   }
 
@@ -189,6 +167,46 @@ export function SortPage() {
             </div>
           </div>
 
+          <fieldset className="grid gap-3 border-t px-4 py-4 sm:px-6">
+            <legend className="sr-only">{t("sort.selectGroup")}</legend>
+            <div className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+              {t("sort.group")}
+            </div>
+            {data.groups.length === 0 ? (
+              <div className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
+                {t("sort.firstGroup")}
+              </div>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {data.groups.map((group) => {
+                  const isSelected = group.id === activeGroupId
+
+                  return (
+                    <label
+                      key={group.id}
+                      className={cn(
+                        "flex min-h-9 cursor-pointer items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-ring/50",
+                        isSelected
+                          ? "border-primary bg-primary text-primary-foreground"
+                          : "bg-background hover:bg-muted"
+                      )}
+                    >
+                      <input
+                        type="radio"
+                        name="sort-group"
+                        value={group.id}
+                        checked={isSelected}
+                        className="size-4 accent-current"
+                        onChange={() => setSelectedGroupId(group.id)}
+                      />
+                      <span>{group.name}</span>
+                    </label>
+                  )
+                })}
+              </div>
+            )}
+          </fieldset>
+
           <div className="grid gap-2 border-t p-4 sm:grid-cols-[auto_minmax(0,1fr)] sm:p-6">
             <Button
               size="lg"
@@ -213,26 +231,10 @@ export function SortPage() {
 
         <aside className="grid content-start divide-y">
           <section className="grid gap-3 p-4 sm:p-5">
-            <div className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-              {t("sort.group")}
+            <div className="flex items-center gap-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+              <FolderPlus className="size-4" />
+              {t("sort.newGroup")}
             </div>
-            {data.groups.length === 0 ? (
-              <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
-                {t("sort.firstGroup")}
-              </div>
-            ) : (
-              <Button
-                type="button"
-                variant="outline"
-                className="h-10 w-full justify-between px-3"
-                onClick={() => void chooseGroup()}
-              >
-                <span className="truncate">
-                  {selectedGroup?.name ?? t("sort.noGroupSelected")}
-                </span>
-                <ChevronDown />
-              </Button>
-            )}
             <form className="flex gap-2" onSubmit={handleAddGroup}>
               <Input
                 value={groupName}

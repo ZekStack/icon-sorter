@@ -10,6 +10,7 @@ import {
 } from "react"
 
 import {
+  createExportPayload,
   createEmptyData,
   DEFAULT_ICON_COLOR,
   iconId,
@@ -303,14 +304,7 @@ export function IconSorterProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const exportData = useCallback(() => {
-    const payload = JSON.stringify(
-      {
-        exportedAt: new Date().toISOString(),
-        ...data,
-      },
-      null,
-      2
-    )
+    const payload = JSON.stringify(createExportPayload(data), null, 2)
     const blob = new Blob([payload], { type: "application/json" })
     const url = URL.createObjectURL(blob)
     const anchor = document.createElement("a")

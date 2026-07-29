@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 
 import {
+  createExportPayload,
   ICON_SORTER_VERSION,
   ICON_TYPES,
   iconId,
@@ -110,5 +111,28 @@ describe("icon sorter data", () => {
 
     expect(normalized.icons.map(iconId)).toEqual(["HugeIcon:home"])
     expect(normalized.discardedIcons.map(iconId)).toEqual(["HsHIcon:home"])
+  })
+
+  it("exports only consumer-facing icon metadata with group names", () => {
+    const payload = currentPayload()
+    payload.icons = [
+      {
+        type: "HsHIcon",
+        name: "home",
+        groupId: group.id,
+        keywords: ["house", "building"],
+        color: "#ff0000",
+        savedAt: "2026-07-29T00:00:00.000Z",
+      },
+    ]
+
+    expect(createExportPayload(normalizeData(payload))).toEqual([
+      {
+        type: "HsHIcon",
+        name: "home",
+        group: "Interior",
+        keywords: ["house", "building"],
+      },
+    ])
   })
 })

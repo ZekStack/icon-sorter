@@ -39,6 +39,11 @@ export type IconSorterData = {
   reviewedIcons: IconReference[]
 }
 
+export type ExportedIcon = IconReference & {
+  group: string
+  keywords: IconKeywords
+}
+
 type StoredData = Record<string, unknown>
 
 export function iconId(icon: IconReference) {
@@ -196,6 +201,28 @@ export function createEmptyData(): IconSorterData {
     discardedIcons: [],
     reviewedIcons: [],
   }
+}
+
+export function createExportPayload(data: IconSorterData): ExportedIcon[] {
+  const groupNames = new Map(
+    data.groups.map((group) => [group.id, group.name] as const)
+  )
+
+  return data.icons.flatMap((icon) => {
+    const group = groupNames.get(icon.groupId)
+    if (!group) {
+      return []
+    }
+
+    return [
+      {
+        type: icon.type,
+        name: icon.name,
+        group,
+        keywords: icon.keywords,
+      },
+    ]
+  })
 }
 
 export function normalizeData(payload: unknown): IconSorterData {

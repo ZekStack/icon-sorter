@@ -16,8 +16,8 @@ pnpm dev
   groups and entering multilingual keywords in one whitespace-separated field,
   and persists each assignment immediately.
 - `/library` displays saved icons by group and supports type filtering, search,
-  importing and exporting saves, group management, moving icons, editing
-  keywords, and returning icons to the sorting queue.
+  importing saves, exporting the icon catalog, group management, moving icons,
+  editing keywords, and returning icons to the sorting queue.
 - `/discarded` lists discarded icons by type and restores them either to their
   previous group or to the sorting queue.
 
@@ -41,9 +41,13 @@ The application stores its dataset in `localStorage` under
 `icon-sorter.library.v2`. The schema version is `4`.
 
 Every saved, discarded, and reviewed icon is identified by its `name` and one of
-the exact types `HugeIcon` or `HsHIcon`. Exports declare both supported types in
-`iconTypes`. Import accepts only the current mixed-library schema and replaces
-the current local dataset after confirmation.
+the exact types `HugeIcon` or `HsHIcon`. Import accepts only the current
+mixed-library persistence schema and replaces the current local dataset after
+confirmation.
+
+Export produces a flat JSON array containing only saved icons. Each item includes
+`type`, `name`, the group name in `group`, and `keywords`. Persistence metadata
+such as IDs, timestamps, version, supported types, and display color is omitted.
 
 Saved icons store keywords as one flat `keywords: string[]` array. The textarea
 accepts spaces, tabs, or new lines as keyword separators.
