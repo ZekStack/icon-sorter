@@ -33,7 +33,6 @@ export {
 } from "@/lib/icon-sorter-data"
 
 const STORAGE_KEY = "icon-sorter.library.v2"
-const DEFAULT_KEYWORD_GROUPS = ["hu", "en"]
 
 export type IconSorterImportResult = {
   groups: number
@@ -48,8 +47,6 @@ type IconSorterContextValue = {
   addGroup: (name: string) => string | null
   renameGroup: (groupId: string, name: string) => void
   removeGroup: (groupId: string) => void
-  addKeywordGroup: (name: string) => void
-  removeKeywordGroup: (name: string) => void
   assignIcon: (icon: AssignIconInput) => void
   moveIcon: (icon: IconReference, groupId: string) => void
   updateIconKeywords: (icon: IconReference, keywords: IconKeywords) => void
@@ -74,24 +71,12 @@ function normalizeName(value: string) {
   return value.trim().replace(/\s+/g, " ")
 }
 
-function uniqueValues(values: string[]) {
-  return [...new Set(values.map(normalizeName).filter(Boolean))]
-}
-
-function removeKeywordFromIcon(icon: SavedIcon, keywordGroup: string) {
-  const keywords = { ...icon.keywords }
-  delete keywords[keywordGroup]
-  return { ...icon, keywords }
-}
-
 function loadData(): IconSorterData {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    return raw
-      ? normalizeData(JSON.parse(raw))
-      : createEmptyData(DEFAULT_KEYWORD_GROUPS)
+    return raw ? normalizeData(JSON.parse(raw)) : createEmptyData()
   } catch {
-    return createEmptyData(DEFAULT_KEYWORD_GROUPS)
+    return createEmptyData()
   }
 }
 
@@ -162,41 +147,6 @@ export function IconSorterProvider({ children }: { children: ReactNode }) {
         ),
       }
     })
-  }, [])
-
-  const addKeywordGroup = useCallback((name: string) => {
-    const normalizedName = normalizeName(name).toLowerCase()
-    if (!normalizedName) {
-      return
-    }
-
-    setData((current) => ({
-      ...current,
-      keywordGroups: uniqueValues([...current.keywordGroups, normalizedName]),
-    }))
-  }, [])
-
-  const removeKeywordGroup = useCallback((name: string) => {
-    const normalizedName = normalizeName(name).toLowerCase()
-    if (!normalizedName) {
-      return
-    }
-
-    setData((current) => ({
-      ...current,
-      keywordGroups: current.keywordGroups.filter(
-        (group) => group !== normalizedName
-      ),
-      icons: current.icons.map((icon) =>
-        removeKeywordFromIcon(icon, normalizedName)
-      ),
-      discardedIcons: current.discardedIcons.map((discardedIcon) => ({
-        ...discardedIcon,
-        previousIcon: discardedIcon.previousIcon
-          ? removeKeywordFromIcon(discardedIcon.previousIcon, normalizedName)
-          : undefined,
-      })),
-    }))
   }, [])
 
   const assignIcon = useCallback((icon: AssignIconInput) => {
@@ -388,8 +338,6 @@ export function IconSorterProvider({ children }: { children: ReactNode }) {
       addGroup,
       renameGroup,
       removeGroup,
-      addKeywordGroup,
-      removeKeywordGroup,
       assignIcon,
       moveIcon,
       updateIconKeywords,
@@ -404,8 +352,6 @@ export function IconSorterProvider({ children }: { children: ReactNode }) {
       addGroup,
       renameGroup,
       removeGroup,
-      addKeywordGroup,
-      removeKeywordGroup,
       assignIcon,
       moveIcon,
       updateIconKeywords,

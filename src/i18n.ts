@@ -42,11 +42,8 @@ const resources = {
         restore: "Restore",
       },
       keywords: {
-        placeholder: "door, entrance, access",
-        remove: "Remove {{name}} keyword bucket",
-        removeTitle: "Remove the {{name}} keyword bucket?",
-        removeConfirm:
-          "Remove the {{name}} keyword bucket from every saved and discarded icon?",
+        label: "Keywords",
+        placeholder: "door\nentrance\naccess",
       },
       sort: {
         complete: "Every icon is sorted.",
@@ -64,7 +61,6 @@ const resources = {
         newGroup: "New group",
         addGroup: "Add group",
         keywords: "Keywords",
-        keywordBucket: "Keyword bucket",
         color: "Icon color",
         colorValue: "Hex color",
       },
@@ -95,7 +91,7 @@ const resources = {
         removeGroupConfirm:
           "Remove {{name}}? Its {{count}} saved icon(s) will return to the sorting queue.",
         editDialog: "Edit {{name}}",
-        commaKeywords: "Comma-separate multiple keywords.",
+        separateKeywords: "Separate keywords with spaces or new lines.",
         closeEditor: "Close editor",
         saveKeywords: "Save keywords",
         keywordCount_one: "{{count}} keyword",
@@ -108,7 +104,6 @@ const resources = {
         removeIconDescription:
           "The icon will be removed from the library and returned to the sorting queue.",
         discardIcon: "Discard {{name}}",
-        keywordBuckets: "Keyword buckets",
       },
       discarded: {
         search: "Search discarded icons",
@@ -160,11 +155,8 @@ const resources = {
         restore: "Visszaállítás",
       },
       keywords: {
-        placeholder: "ajtó, bejárat, hozzáférés",
-        remove: "{{name}} kulcsszómező eltávolítása",
-        removeTitle: "Eltávolítod a(z) {{name}} kulcsszómezőt?",
-        removeConfirm:
-          "Eltávolítod a(z) {{name}} kulcsszómezőt minden mentett és elvetett ikonból?",
+        label: "Kulcsszavak",
+        placeholder: "ajtó\nbejárat\nhozzáférés",
       },
       sort: {
         complete: "Minden ikon rendezve van.",
@@ -183,7 +175,6 @@ const resources = {
         newGroup: "Új csoport",
         addGroup: "Csoport hozzáadása",
         keywords: "Kulcsszavak",
-        keywordBucket: "Kulcsszómező",
         color: "Ikon színe",
         colorValue: "Hex szín",
       },
@@ -215,7 +206,8 @@ const resources = {
         removeGroupConfirm:
           "Eltávolítod a(z) {{name}} csoportot? A benne lévő {{count}} mentett ikon visszakerül a rendezési sorba.",
         editDialog: "{{name}} szerkesztése",
-        commaKeywords: "Több kulcsszót vesszővel válassz el.",
+        separateKeywords:
+          "A kulcsszavakat szóközzel vagy új sorral válaszd el.",
         closeEditor: "Szerkesztő bezárása",
         saveKeywords: "Kulcsszavak mentése",
         keywordCount_one: "{{count}} kulcsszó",
@@ -228,7 +220,6 @@ const resources = {
         removeIconDescription:
           "Az ikon kikerül a könyvtárból, és visszakerül a rendezési sorba.",
         discardIcon: "{{name}} elvetése",
-        keywordBuckets: "Kulcsszómezők",
       },
       discarded: {
         search: "Keresés az elvetett ikonok között",

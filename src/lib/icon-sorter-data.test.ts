@@ -21,7 +21,6 @@ function currentPayload(): Record<string, unknown> {
     icons: [],
     discardedIcons: [],
     reviewedIcons: [],
-    keywordGroups: ["hu", "en"],
   }
 }
 
@@ -33,7 +32,7 @@ describe("icon sorter data", () => {
         type: "HugeIcon",
         name: "home",
         groupId: group.id,
-        keywords: {},
+        keywords: [],
         color: "#ffffff",
         savedAt: "2026-07-29T00:00:00.000Z",
       },
@@ -41,7 +40,7 @@ describe("icon sorter data", () => {
         type: "HsHIcon",
         name: "home",
         groupId: group.id,
-        keywords: {},
+        keywords: [],
         color: "#000000",
         savedAt: "2026-07-29T00:00:00.000Z",
       },
@@ -85,7 +84,7 @@ describe("icon sorter data", () => {
         type: "HugeIcon",
         name: "home",
         groupId: group.id,
-        keywords: {},
+        keywords: [],
         color: "#ffffff",
         savedAt: "2026-07-29T00:00:00.000Z",
       },
@@ -93,7 +92,7 @@ describe("icon sorter data", () => {
         type: "HsHIcon",
         name: "home",
         groupId: group.id,
-        keywords: {},
+        keywords: [],
         color: "#000000",
         savedAt: "2026-07-29T00:00:00.000Z",
       },

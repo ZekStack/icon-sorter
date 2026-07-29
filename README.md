@@ -13,8 +13,8 @@ pnpm dev
 ## Pages
 
 - `/` shows the next unseen icon for the selected icon type, supports creating
-  groups and keyword buckets at any time, and persists each assignment
-  immediately.
+  groups and entering multilingual keywords in one whitespace-separated field,
+  and persists each assignment immediately.
 - `/library` displays saved icons by group and supports type filtering, search,
   importing and exporting saves, group management, moving icons, editing
   keywords, and returning icons to the sorting queue.
@@ -44,6 +44,9 @@ Every saved, discarded, and reviewed icon is identified by its `name` and one of
 the exact types `HugeIcon` or `HsHIcon`. Exports declare both supported types in
 `iconTypes`. Import accepts only the current mixed-library schema and replaces
 the current local dataset after confirmation.
+
+Saved icons store keywords as one flat `keywords: string[]` array. The textarea
+accepts spaces, tabs, or new lines as keyword separators.
 
 Removing an icon from the library removes it from the reviewed set so it appears
 in the sorting queue again.

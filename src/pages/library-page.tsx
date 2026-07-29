@@ -27,17 +27,14 @@ import { IconPreview } from "@/components/icon-preview"
 import { IconTypeBadge } from "@/components/icon-type-badge"
 import { IconTypeFilterControl } from "@/components/icon-type-filter"
 import { useSelect } from "@/components/custom/select-dialog"
-import { KeywordFields } from "@/components/keyword-fields"
+import { KeywordTextarea } from "@/components/keyword-textarea"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import type { IconTypeFilter } from "@/lib/icon-catalog"
+import { formatKeywordText, parseKeywordText } from "@/lib/icon-keywords"
 import { iconId } from "@/lib/icon-sorter-data"
-import {
-  useIconSorter,
-  type IconKeywords,
-  type SavedIcon,
-} from "@/lib/icon-sorter-store"
+import { useIconSorter, type SavedIcon } from "@/lib/icon-sorter-store"
 
 type ImportNotice = {
   type: "success" | "error"
@@ -50,7 +47,6 @@ export function LibraryPage() {
     addGroup,
     renameGroup,
     removeGroup,
-    removeKeywordGroup,
     moveIcon,
     updateIconKeywords,
     removeIcon,
@@ -64,7 +60,7 @@ export function LibraryPage() {
   const [search, setSearch] = useState("")
   const [groupName, setGroupName] = useState("")
   const [editingIcon, setEditingIcon] = useState<SavedIcon | null>(null)
-  const [editingKeywords, setEditingKeywords] = useState<IconKeywords>({})
+  const [editingKeywordText, setEditingKeywordText] = useState("")
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null)
   const [editingGroupName, setEditingGroupName] = useState("")
   const [importNotice, setImportNotice] = useState<ImportNotice | null>(null)
@@ -83,7 +79,7 @@ export function LibraryPage() {
 
       const groupNameValue =
         data.groups.find((group) => group.id === icon.groupId)?.name ?? ""
-      const keywords = Object.values(icon.keywords).flat().join(" ")
+      const keywords = icon.keywords.join(" ")
       return `${icon.type} ${icon.name} ${groupNameValue} ${keywords}`
         .toLowerCase()
         .includes(normalizedSearch)
@@ -144,28 +140,6 @@ export function LibraryPage() {
     }
   }
 
-  async function handleRemoveKeywordGroup(group: string) {
-    const confirmed = await confirm({
-      label: t("keywords.removeTitle", { name: group }),
-      description: t("keywords.removeConfirm", { name: group }),
-      type: ConfirmError,
-      media: <Trash2 className="size-5" />,
-      confirmLabel: t("common.remove"),
-      cancelLabel: t("common.cancel"),
-      dismissible: false,
-    })
-    if (!confirmed) {
-      return
-    }
-
-    removeKeywordGroup(group)
-    setEditingKeywords((current) => {
-      const nextKeywords = { ...current }
-      delete nextKeywords[group]
-      return nextKeywords
-    })
-  }
-
   async function handleImportFile(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]
     event.target.value = ""
@@ -208,14 +182,14 @@ export function LibraryPage() {
 
   function openIconEditor(icon: SavedIcon) {
     setEditingIcon(icon)
-    setEditingKeywords(icon.keywords)
+    setEditingKeywordText(formatKeywordText(icon.keywords))
   }
 
   function saveIconEditor() {
     if (!editingIcon) {
       return
     }
-    updateIconKeywords(editingIcon, editingKeywords)
+    updateIconKeywords(editingIcon, parseKeywordText(editingKeywordText))
     setEditingIcon(null)
   }
 
@@ -298,32 +272,6 @@ export function LibraryPage() {
               count: data.icons.length.toLocaleString(locale),
             })}
           </span>
-          {data.keywordGroups.length > 0 ? (
-            <div className="ml-auto flex flex-wrap items-center justify-end gap-1.5">
-              <span className="mr-1 hidden sm:inline">
-                {t("library.keywordBuckets")}
-              </span>
-              {data.keywordGroups.map((group) => (
-                <span
-                  key={group}
-                  className="inline-flex h-7 items-center gap-1 rounded-full border bg-muted pl-2.5 font-medium text-foreground"
-                >
-                  {group}
-                  <Button
-                    type="button"
-                    size="icon-xs"
-                    variant="ghost"
-                    className="rounded-full"
-                    aria-label={t("keywords.remove", { name: group })}
-                    title={t("keywords.remove", { name: group })}
-                    onClick={() => void handleRemoveKeywordGroup(group)}
-                  >
-                    <X />
-                  </Button>
-                </span>
-              ))}
-            </div>
-          ) : null}
         </div>
 
         {data.groups.length === 0 ? (
@@ -461,7 +409,7 @@ export function LibraryPage() {
                 </div>
                 <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                   <IconTypeBadge type={editingIcon.type} />
-                  <span>{t("library.commaKeywords")}</span>
+                  <span>{t("library.separateKeywords")}</span>
                 </div>
               </div>
               <Button
@@ -473,10 +421,9 @@ export function LibraryPage() {
                 <X />
               </Button>
             </div>
-            <KeywordFields
-              groups={data.keywordGroups}
-              value={editingKeywords}
-              onChange={setEditingKeywords}
+            <KeywordTextarea
+              value={editingKeywordText}
+              onChange={setEditingKeywordText}
             />
             <div className="flex justify-end gap-2 border-t pt-4">
               <Button variant="outline" onClick={() => setEditingIcon(null)}>
@@ -511,7 +458,7 @@ function IconRow({
   const { confirm } = useConfirm()
   const { select } = useSelect()
   const { t } = useTranslation()
-  const keywordCount = Object.values(icon.keywords).flat().length
+  const keywordCount = icon.keywords.length
   const currentGroup = groups.find((group) => group.id === icon.groupId)
 
   async function chooseGroup() {

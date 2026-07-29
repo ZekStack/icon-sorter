@@ -7,43 +7,29 @@ import {
   FolderPlus,
   Languages,
   Palette,
-  Trash2,
 } from "lucide-react"
 import { useTranslation } from "react-i18next"
 
-import { ConfirmError, useConfirm } from "@/components/custom/confirm-dialog"
 import { IconPreview } from "@/components/icon-preview"
 import { IconTypeBadge } from "@/components/icon-type-badge"
 import { IconTypeFilterControl } from "@/components/icon-type-filter"
 import { useSelect } from "@/components/custom/select-dialog"
-import { KeywordFields } from "@/components/keyword-fields"
+import { KeywordTextarea } from "@/components/keyword-textarea"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { iconCatalog, type IconTypeFilter } from "@/lib/icon-catalog"
+import { parseKeywordText } from "@/lib/icon-keywords"
 import { iconId } from "@/lib/icon-sorter-data"
-import {
-  DEFAULT_ICON_COLOR,
-  useIconSorter,
-  type IconKeywords,
-} from "@/lib/icon-sorter-store"
+import { DEFAULT_ICON_COLOR, useIconSorter } from "@/lib/icon-sorter-store"
 
 export function SortPage() {
-  const {
-    data,
-    addGroup,
-    addKeywordGroup,
-    removeKeywordGroup,
-    assignIcon,
-    discardIcon,
-  } = useIconSorter()
-  const { confirm } = useConfirm()
+  const { data, addGroup, assignIcon, discardIcon } = useIconSorter()
   const { select } = useSelect()
   const { t, i18n } = useTranslation()
   const [selectedGroupId, setSelectedGroupId] = useState("")
   const [groupName, setGroupName] = useState("")
-  const [keywordGroupName, setKeywordGroupName] = useState("")
-  const [keywords, setKeywords] = useState<IconKeywords>({})
+  const [keywordText, setKeywordText] = useState("")
   const [color, setColor] = useState(DEFAULT_ICON_COLOR)
   const [iconTypeFilter, setIconTypeFilter] = useState<IconTypeFilter>("all")
   const locale = i18n.language.startsWith("hu") ? "hu-HU" : "en-US"
@@ -80,7 +66,7 @@ export function SortPage() {
     : 0
 
   function resetIconFields() {
-    setKeywords({})
+    setKeywordText("")
     setColor(DEFAULT_ICON_COLOR)
   }
 
@@ -91,16 +77,6 @@ export function SortPage() {
       setSelectedGroupId(newGroupId)
       setGroupName("")
     }
-  }
-
-  function handleAddKeywordGroup(event: FormEvent) {
-    event.preventDefault()
-    const normalizedName = keywordGroupName.trim().toLowerCase()
-    if (!normalizedName) {
-      return
-    }
-    addKeywordGroup(normalizedName)
-    setKeywordGroupName("")
   }
 
   async function chooseGroup() {
@@ -123,28 +99,6 @@ export function SortPage() {
     }
   }
 
-  async function handleRemoveKeywordGroup(group: string) {
-    const confirmed = await confirm({
-      label: t("keywords.removeTitle", { name: group }),
-      description: t("keywords.removeConfirm", { name: group }),
-      type: ConfirmError,
-      media: <Trash2 className="size-5" />,
-      confirmLabel: t("common.remove"),
-      cancelLabel: t("common.cancel"),
-      dismissible: false,
-    })
-    if (!confirmed) {
-      return
-    }
-
-    removeKeywordGroup(group)
-    setKeywords((current) => {
-      const nextKeywords = { ...current }
-      delete nextKeywords[group]
-      return nextKeywords
-    })
-  }
-
   function handleAssign() {
     if (!currentIcon || !activeGroupId) {
       return
@@ -154,7 +108,7 @@ export function SortPage() {
       type: currentIcon.type,
       name: currentIcon.name,
       groupId: activeGroupId,
-      keywords,
+      keywords: parseKeywordText(keywordText),
       color,
     })
     resetIconFields()
@@ -319,22 +273,7 @@ export function SortPage() {
               <Languages className="size-4" />
               {t("sort.keywords")}
             </div>
-            <KeywordFields
-              groups={data.keywordGroups}
-              value={keywords}
-              onChange={setKeywords}
-              onRemoveGroup={(group) => void handleRemoveKeywordGroup(group)}
-            />
-            <form className="flex gap-2" onSubmit={handleAddKeywordGroup}>
-              <Input
-                value={keywordGroupName}
-                placeholder={t("sort.keywordBucket")}
-                onChange={(event) => setKeywordGroupName(event.target.value)}
-              />
-              <Button type="submit" variant="outline">
-                {t("common.add")}
-              </Button>
-            </form>
+            <KeywordTextarea value={keywordText} onChange={setKeywordText} />
           </section>
         </aside>
       </div>

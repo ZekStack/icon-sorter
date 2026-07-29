@@ -15,7 +15,7 @@ export type IconGroup = {
   createdAt: string
 }
 
-export type IconKeywords = Record<string, string[]>
+export type IconKeywords = string[]
 
 export type SavedIcon = IconReference & {
   groupId: string
@@ -37,7 +37,6 @@ export type IconSorterData = {
   icons: SavedIcon[]
   discardedIcons: DiscardedIcon[]
   reviewedIcons: IconReference[]
-  keywordGroups: string[]
 }
 
 type StoredData = Record<string, unknown>
@@ -69,28 +68,12 @@ export function normalizeColor(value: unknown) {
 }
 
 export function normalizeKeywords(value: unknown): IconKeywords {
-  if (!isRecord(value)) {
-    return {}
+  if (!Array.isArray(value)) {
+    return []
   }
 
-  return Object.fromEntries(
-    Object.entries(value).flatMap(([group, keywords]) => {
-      const normalizedGroup = normalizeName(group).toLowerCase()
-      if (!normalizedGroup || !Array.isArray(keywords)) {
-        return []
-      }
-
-      return [
-        [
-          normalizedGroup,
-          uniqueValues(
-            keywords.filter(
-              (keyword): keyword is string => typeof keyword === "string"
-            )
-          ),
-        ],
-      ]
-    })
+  return uniqueValues(
+    value.filter((keyword): keyword is string => typeof keyword === "string")
   )
 }
 
@@ -204,9 +187,7 @@ function assertCurrentSchema(payload: StoredData) {
   }
 }
 
-export function createEmptyData(
-  keywordGroups: string[] = ["hu", "en"]
-): IconSorterData {
+export function createEmptyData(): IconSorterData {
   return {
     version: ICON_SORTER_VERSION,
     iconTypes: [...ICON_TYPES],
@@ -214,7 +195,6 @@ export function createEmptyData(
     icons: [],
     discardedIcons: [],
     reviewedIcons: [],
-    keywordGroups,
   }
 }
 
@@ -265,14 +245,6 @@ export function normalizeData(payload: unknown): IconSorterData {
     reviewedById.set(iconId(icon), { type: icon.type, name: icon.name })
   }
 
-  const keywordGroups = Array.isArray(payload.keywordGroups)
-    ? uniqueValues(
-        payload.keywordGroups
-          .filter((group): group is string => typeof group === "string")
-          .map((group) => group.toLowerCase())
-      )
-    : []
-
   return {
     version: ICON_SORTER_VERSION,
     iconTypes: [...ICON_TYPES],
@@ -280,6 +252,5 @@ export function normalizeData(payload: unknown): IconSorterData {
     icons: [...iconsById.values()],
     discardedIcons: [...discardedById.values()],
     reviewedIcons: [...reviewedById.values()],
-    keywordGroups,
   }
 }
