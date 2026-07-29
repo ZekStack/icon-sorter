@@ -1,5 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react"
-import { HugeiconsIcon } from "@hugeicons/react"
+import { useMemo, useState, type FormEvent } from "react"
 import {
   ArchiveX,
   ArrowRight,
@@ -12,16 +11,17 @@ import {
 } from "lucide-react"
 import { useTranslation } from "react-i18next"
 
-import {
-  ConfirmError,
-  useConfirm,
-} from "@/components/custom/confirm-dialog"
+import { ConfirmError, useConfirm } from "@/components/custom/confirm-dialog"
+import { IconPreview } from "@/components/icon-preview"
+import { IconTypeBadge } from "@/components/icon-type-badge"
+import { IconTypeFilterControl } from "@/components/icon-type-filter"
 import { useSelect } from "@/components/custom/select-dialog"
 import { KeywordFields } from "@/components/keyword-fields"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { iconCatalog } from "@/lib/icon-catalog"
+import { iconCatalog, type IconTypeFilter } from "@/lib/icon-catalog"
+import { iconId } from "@/lib/icon-sorter-data"
 import {
   DEFAULT_ICON_COLOR,
   useIconSorter,
@@ -45,39 +45,38 @@ export function SortPage() {
   const [keywordGroupName, setKeywordGroupName] = useState("")
   const [keywords, setKeywords] = useState<IconKeywords>({})
   const [color, setColor] = useState(DEFAULT_ICON_COLOR)
+  const [iconTypeFilter, setIconTypeFilter] = useState<IconTypeFilter>("all")
   const locale = i18n.language.startsWith("hu") ? "hu-HU" : "en-US"
 
-  useEffect(() => {
-    if (
-      !selectedGroupId ||
-      !data.groups.some((group) => group.id === selectedGroupId)
-    ) {
-      setSelectedGroupId(data.groups[0]?.id ?? "")
-    }
-  }, [data.groups, selectedGroupId])
-
-  const selectedGroup = data.groups.find(
-    (group) => group.id === selectedGroupId
+  const selectedGroup =
+    data.groups.find((group) => group.id === selectedGroupId) ?? data.groups[0]
+  const activeGroupId = selectedGroup?.id ?? ""
+  const filteredCatalog = useMemo(
+    () =>
+      iconTypeFilter === "all"
+        ? iconCatalog
+        : iconCatalog.filter((icon) => icon.type === iconTypeFilter),
+    [iconTypeFilter]
   )
   const reviewed = useMemo(
-    () => new Set(data.reviewedIconNames),
-    [data.reviewedIconNames]
+    () => new Set(data.reviewedIcons.map(iconId)),
+    [data.reviewedIcons]
   )
   const currentIcon = useMemo(
-    () => iconCatalog.find((icon) => !reviewed.has(icon.name)),
-    [reviewed]
+    () => filteredCatalog.find((icon) => !reviewed.has(iconId(icon))),
+    [filteredCatalog, reviewed]
   )
   const remainingCount = useMemo(
     () =>
-      iconCatalog.reduce(
-        (count, icon) => count + Number(!reviewed.has(icon.name)),
+      filteredCatalog.reduce(
+        (count, icon) => count + Number(!reviewed.has(iconId(icon))),
         0
       ),
-    [reviewed]
+    [filteredCatalog, reviewed]
   )
-  const reviewedCount = iconCatalog.length - remainingCount
-  const progress = iconCatalog.length
-    ? Math.min((reviewedCount / iconCatalog.length) * 100, 100)
+  const reviewedCount = filteredCatalog.length - remainingCount
+  const progress = filteredCatalog.length
+    ? Math.min((reviewedCount / filteredCatalog.length) * 100, 100)
     : 0
 
   function resetIconFields() {
@@ -147,13 +146,14 @@ export function SortPage() {
   }
 
   function handleAssign() {
-    if (!currentIcon || !selectedGroupId) {
+    if (!currentIcon || !activeGroupId) {
       return
     }
 
     assignIcon({
+      type: currentIcon.type,
       name: currentIcon.name,
-      groupId: selectedGroupId,
+      groupId: activeGroupId,
       keywords,
       color,
     })
@@ -165,14 +165,23 @@ export function SortPage() {
       return
     }
 
-    discardIcon(currentIcon.name, color)
+    discardIcon(currentIcon, color)
+    resetIconFields()
+  }
+
+  function handleTypeFilterChange(value: IconTypeFilter) {
+    setIconTypeFilter(value)
     resetIconFields()
   }
 
   if (!currentIcon) {
     return (
-      <div className="grid min-h-[calc(100svh-8rem)] place-items-center border-x border-dashed px-6 text-center">
-        <div className="grid max-w-sm gap-4">
+      <div className="grid min-h-[calc(100svh-8rem)] place-items-center border-x border-dashed px-6 py-8 text-center">
+        <div className="grid max-w-sm justify-items-center gap-4">
+          <IconTypeFilterControl
+            value={iconTypeFilter}
+            onChange={handleTypeFilterChange}
+          />
           <div className="mx-auto grid size-14 place-items-center rounded-full bg-foreground text-background">
             <Check className="size-6" />
           </div>
@@ -196,10 +205,14 @@ export function SortPage() {
 
       <div className="grid lg:grid-cols-[minmax(0,1fr)_22rem]">
         <section className="flex min-h-[34rem] flex-col border-b lg:border-r lg:border-b-0">
-          <div className="flex items-center justify-between border-b px-4 py-3 text-xs text-muted-foreground sm:px-6">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3 text-xs text-muted-foreground sm:px-6">
+            <IconTypeFilterControl
+              value={iconTypeFilter}
+              onChange={handleTypeFilterChange}
+            />
             <span>
               {reviewedCount.toLocaleString(locale)} /{" "}
-              {iconCatalog.length.toLocaleString(locale)}
+              {filteredCatalog.length.toLocaleString(locale)}
             </span>
             <Badge>
               {t("sort.remaining", {
@@ -211,15 +224,13 @@ export function SortPage() {
           <div className="grid flex-1 place-items-center px-4 py-10 sm:px-8">
             <div className="grid justify-items-center gap-6 text-center">
               <div className="grid size-48 place-items-center rounded-[2rem] border bg-muted/35 sm:size-56">
-                <HugeiconsIcon
-                  icon={currentIcon.icon}
-                  size={124}
-                  strokeWidth={1.35}
-                  color={color}
-                />
+                <IconPreview icon={currentIcon} size={124} color={color} />
               </div>
-              <div className="max-w-full font-mono text-sm font-medium break-all sm:text-base">
-                {currentIcon.name}
+              <div className="grid max-w-full justify-items-center gap-2">
+                <IconTypeBadge type={currentIcon.type} />
+                <div className="font-mono text-sm font-medium break-all sm:text-base">
+                  {currentIcon.name}
+                </div>
               </div>
             </div>
           </div>
@@ -237,7 +248,7 @@ export function SortPage() {
             <Button
               size="lg"
               className="w-full"
-              disabled={!selectedGroupId}
+              disabled={!activeGroupId}
               onClick={handleAssign}
             >
               {t("sort.assign")}

@@ -5,7 +5,6 @@ import {
   type ChangeEvent,
   type FormEvent,
 } from "react"
-import { HugeiconsIcon } from "@hugeicons/react"
 import {
   ArchiveX,
   ChevronDown,
@@ -24,12 +23,16 @@ import {
   ConfirmWarning,
   useConfirm,
 } from "@/components/custom/confirm-dialog"
+import { IconPreview } from "@/components/icon-preview"
+import { IconTypeBadge } from "@/components/icon-type-badge"
+import { IconTypeFilterControl } from "@/components/icon-type-filter"
 import { useSelect } from "@/components/custom/select-dialog"
 import { KeywordFields } from "@/components/keyword-fields"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { iconCatalogByName } from "@/lib/icon-catalog"
+import type { IconTypeFilter } from "@/lib/icon-catalog"
+import { iconId } from "@/lib/icon-sorter-data"
 import {
   useIconSorter,
   type IconKeywords,
@@ -65,23 +68,27 @@ export function LibraryPage() {
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null)
   const [editingGroupName, setEditingGroupName] = useState("")
   const [importNotice, setImportNotice] = useState<ImportNotice | null>(null)
+  const [iconTypeFilter, setIconTypeFilter] = useState<IconTypeFilter>("all")
   const locale = i18n.language.startsWith("hu") ? "hu-HU" : "en-US"
 
   const normalizedSearch = search.trim().toLowerCase()
   const visibleIcons = useMemo(() => {
-    if (!normalizedSearch) {
-      return data.icons
-    }
-
     return data.icons.filter((icon) => {
+      if (iconTypeFilter !== "all" && icon.type !== iconTypeFilter) {
+        return false
+      }
+      if (!normalizedSearch) {
+        return true
+      }
+
       const groupNameValue =
         data.groups.find((group) => group.id === icon.groupId)?.name ?? ""
       const keywords = Object.values(icon.keywords).flat().join(" ")
-      return `${icon.name} ${groupNameValue} ${keywords}`
+      return `${icon.type} ${icon.name} ${groupNameValue} ${keywords}`
         .toLowerCase()
         .includes(normalizedSearch)
     })
-  }, [data.groups, data.icons, normalizedSearch])
+  }, [data.groups, data.icons, iconTypeFilter, normalizedSearch])
 
   const hasExportableData =
     data.groups.length > 0 ||
@@ -111,7 +118,9 @@ export function LibraryPage() {
   }
 
   async function handleRemoveGroup(groupId: string, name: string) {
-    const iconCount = data.icons.filter((icon) => icon.groupId === groupId).length
+    const iconCount = data.icons.filter(
+      (icon) => icon.groupId === groupId
+    ).length
     const confirmed = await confirm({
       label: t("library.removeGroupTitle", { name }),
       description: t("library.removeGroupConfirm", {
@@ -206,7 +215,7 @@ export function LibraryPage() {
     if (!editingIcon) {
       return
     }
-    updateIconKeywords(editingIcon.name, editingKeywords)
+    updateIconKeywords(editingIcon, editingKeywords)
     setEditingIcon(null)
   }
 
@@ -275,6 +284,10 @@ export function LibraryPage() {
         ) : null}
 
         <div className="flex flex-wrap items-center gap-2 border-y py-3 text-xs text-muted-foreground">
+          <IconTypeFilterControl
+            value={iconTypeFilter}
+            onChange={setIconTypeFilter}
+          />
           <Badge>
             {t("library.visible", {
               count: visibleIcons.length.toLocaleString(locale),
@@ -357,7 +370,9 @@ export function LibraryPage() {
                         <div className="min-w-0 flex-1 truncate font-semibold">
                           {group.name}
                         </div>
-                        <Badge>{groupIcons.length.toLocaleString(locale)}</Badge>
+                        <Badge>
+                          {groupIcons.length.toLocaleString(locale)}
+                        </Badge>
                         <Button
                           size="icon-sm"
                           variant="ghost"
@@ -390,7 +405,7 @@ export function LibraryPage() {
 
                   {groupIcons.length === 0 ? (
                     <div className="rounded-lg border border-dashed px-4 py-6 text-sm text-muted-foreground">
-                      {normalizedSearch
+                      {normalizedSearch || iconTypeFilter !== "all"
                         ? t("library.noMatches")
                         : t("library.emptyGroup")}
                     </div>
@@ -398,13 +413,13 @@ export function LibraryPage() {
                     <div className="grid grid-cols-1 gap-px overflow-hidden rounded-xl border bg-border sm:grid-cols-2 xl:grid-cols-3">
                       {groupIcons.map((icon) => (
                         <IconRow
-                          key={icon.name}
+                          key={iconId(icon)}
                           icon={icon}
                           groups={data.groups}
-                          onMove={(groupId) => moveIcon(icon.name, groupId)}
+                          onMove={(groupId) => moveIcon(icon, groupId)}
                           onEdit={() => openIconEditor(icon)}
-                          onRemove={() => removeIcon(icon.name)}
-                          onDiscard={() => discardIcon(icon.name)}
+                          onRemove={() => removeIcon(icon)}
+                          onDiscard={() => discardIcon(icon)}
                         />
                       ))}
                     </div>
@@ -434,8 +449,8 @@ export function LibraryPage() {
           >
             <div className="flex items-start gap-4">
               <div className="grid size-16 shrink-0 place-items-center rounded-xl border bg-muted/40">
-                <HugeIconPreview
-                  name={editingIcon.name}
+                <IconPreview
+                  icon={editingIcon}
                   size={36}
                   color={editingIcon.color}
                 />
@@ -444,8 +459,9 @@ export function LibraryPage() {
                 <div className="font-mono text-sm font-semibold break-all">
                   {editingIcon.name}
                 </div>
-                <div className="mt-1 text-xs text-muted-foreground">
-                  {t("library.commaKeywords")}
+                <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                  <IconTypeBadge type={editingIcon.type} />
+                  <span>{t("library.commaKeywords")}</span>
                 </div>
               </div>
               <Button
@@ -535,7 +551,7 @@ function IconRow({
   return (
     <article className="grid grid-cols-[4rem_minmax(0,1fr)] gap-3 bg-background p-3">
       <div className="grid size-16 place-items-center rounded-xl border bg-muted/30">
-        <HugeIconPreview name={icon.name} size={34} color={icon.color} />
+        <IconPreview icon={icon} size={34} color={icon.color} />
       </div>
       <div className="grid min-w-0 content-between gap-3">
         <div className="min-w-0">
@@ -545,8 +561,9 @@ function IconRow({
           >
             {icon.name}
           </div>
-          <div className="mt-1 text-xs text-muted-foreground">
-            {t("library.keywordCount", { count: keywordCount })}
+          <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            <IconTypeBadge type={icon.type} />
+            <span>{t("library.keywordCount", { count: keywordCount })}</span>
           </div>
         </div>
         <div className="flex items-center gap-1.5">
@@ -591,29 +608,5 @@ function IconRow({
         </div>
       </div>
     </article>
-  )
-}
-
-function HugeIconPreview({
-  name,
-  size,
-  color,
-}: {
-  name: string
-  size: number
-  color: string
-}) {
-  const catalogItem = iconCatalogByName.get(name)
-  if (!catalogItem) {
-    return <span className="text-xs text-muted-foreground">?</span>
-  }
-
-  return (
-    <HugeiconsIcon
-      icon={catalogItem.icon}
-      size={size}
-      strokeWidth={1.4}
-      color={color}
-    />
   )
 }

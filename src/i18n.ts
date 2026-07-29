@@ -25,6 +25,12 @@ const resources = {
         en: "English",
         hu: "Hungarian",
       },
+      iconType: {
+        filter: "Filter by icon type",
+        all: "All",
+        HugeIcon: "Hugeicons",
+        HsHIcon: "HsH",
+      },
       common: {
         add: "Add",
         save: "Save",
@@ -74,7 +80,7 @@ const resources = {
         importSuccess:
           "Imported {{groups}} groups, {{icons}} saved icons, and {{discardedIcons}} discarded icons.",
         importUnsupported:
-          "This save uses an unsupported icon library type. Only Huge icons saves can be imported.",
+          "This save does not declare both supported icon types.",
         importInvalid: "The selected file is not a valid icon-sorter save.",
         visible: "{{count}} visible",
         savedTotal: "{{count}} saved total",
@@ -137,6 +143,12 @@ const resources = {
         en: "Angol",
         hu: "Magyar",
       },
+      iconType: {
+        filter: "Szűrés ikontípus szerint",
+        all: "Mind",
+        HugeIcon: "Hugeicons",
+        HsHIcon: "HsH",
+      },
       common: {
         add: "Hozzáadás",
         save: "Mentés",
@@ -165,7 +177,8 @@ const resources = {
         group: "Csoport",
         firstGroup: "Az ikon hozzárendelése előtt hozz létre egy csoportot.",
         selectGroup: "Csoport kiválasztása",
-        selectGroupDescription: "Válaszd ki, melyik csoportba kerüljön az ikon.",
+        selectGroupDescription:
+          "Válaszd ki, melyik csoportba kerüljön az ikon.",
         noGroupSelected: "Nincs kiválasztott csoport",
         newGroup: "Új csoport",
         addGroup: "Csoport hozzáadása",
@@ -186,7 +199,7 @@ const resources = {
         importSuccess:
           "Importálva: {{groups}} csoport, {{icons}} mentett ikon és {{discardedIcons}} elvetett ikon.",
         importUnsupported:
-          "Ez a mentés nem támogatott ikontípust használ. Jelenleg csak Huge icons mentés importálható.",
+          "Ez a mentés nem tartalmazza mindkét támogatott ikontípust.",
         importInvalid: "A kiválasztott fájl nem érvényes icon-sorter mentés.",
         visible: "{{count}} látható",
         savedTotal: "Összesen {{count}} mentett",
@@ -210,8 +223,7 @@ const resources = {
         moveIcon: "{{name}} áthelyezése",
         moveIconDescription: "Válaszd ki az ikon célcsoportját.",
         editKeywords: "{{name}} kulcsszavainak szerkesztése",
-        removeIcon:
-          "{{name}} eltávolítása és visszaküldése a rendezési sorba",
+        removeIcon: "{{name}} eltávolítása és visszaküldése a rendezési sorba",
         removeIconTitle: "Eltávolítod a(z) {{name}} ikont?",
         removeIconDescription:
           "Az ikon kikerül a könyvtárból, és visszakerül a rendezési sorba.",

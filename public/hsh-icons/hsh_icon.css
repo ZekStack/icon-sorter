@@ -1,0 +1,890 @@
+@font-face {
+    font-family: 'hsh';
+    src: url('/hsh-icons/hshIcon.eot');
+    src: url('/hsh-icons/hshIcon.eot') format('embedded-opentype'),
+        url('/hsh-icons/hshIcon.ttf') format('truetype'),
+        url('/hsh-icons/hshIcon.woff') format('woff'),
+        url('/hsh-icons/hshIcon.svg') format('svg');
+    font-weight: normal;
+    font-style: normal;
+    font-display: block;
+}
+
+.ico-hsh-rotate-vertical{
+    -webkit-animation:rotateVertical 1s linear infinite;
+    -moz-animation:rotateVertical 1s linear infinite;
+    animation:rotateVertical 1s linear infinite;
+    z-index: 0;
+}
+
+.ico-hsh-rotate{
+    -webkit-animation:spin 1s linear infinite;
+    -moz-animation:spin 1s linear infinite;
+    animation:spin 1s linear infinite;
+}
+
+.ico-hsh-rotate-ease{
+    -webkit-animation:spin 1s cubic-bezier(0.18, 0.89, 0.32, 1.28) infinite;
+    -moz-animation:spin 1s cubic-bezier(0.18, 0.89, 0.32, 1.28) infinite;
+    animation:spin 1s cubic-bezier(0.18, 0.89, 0.32, 1.28) infinite;
+}
+
+.ico-hsh-rotate-slow{
+    -webkit-animation:spin 3s linear infinite;
+    -moz-animation:spin 3s linear infinite;
+    animation:spin 3s linear infinite;
+}
+
+.ico-hsh-rotate-fast{
+    -webkit-animation:spin 0.5s linear infinite;
+    -moz-animation:spin 0.5s linear infinite;
+    animation:spin 0.5s linear infinite;
+}
+
+
+@-moz-keyframes rotateVertical { 
+    100% { -moz-transform: rotateY(360deg); } 
+}
+@-webkit-keyframes rotateVertical { 
+    100% { -webkit-transform: rotateY(360deg); } 
+}
+@keyframes rotateVertical { 
+    100% { 
+        -webkit-transform: rotateY(360deg); 
+        transform:rotateY(360deg);
+    } 
+}
+
+@-moz-keyframes spin { 
+    100% { -moz-transform: rotate(360deg); } 
+}
+@-webkit-keyframes spin { 
+    100% { -webkit-transform: rotate(360deg); } 
+}
+@keyframes spin { 
+    100% { 
+        -webkit-transform: rotate(360deg); 
+        transform:rotate(360deg); 
+    } 
+}
+
+[class^="ico-hsh-"], [class*=" ico-hsh-"] {
+    font-family: 'hsh' !important;
+    font-style: normal;
+    font-weight: 400;
+    font-variant: normal;
+    text-transform: none;
+    line-height: 1;
+
+    /* Better Font Rendering =========== */
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+.ico-hsh-arrow-down:before {
+    content: "\e900";
+
+}
+
+.ico-hsh-arrow-left:before {
+    content: "\e901";
+
+}
+
+.ico-hsh-arrow-right:before {
+    content: "\e902";
+
+}
+
+.ico-hsh-arrow-up:before {
+    content: "\e903";
+
+}
+
+.ico-hsh-builder:before {
+    content: "\e904";
+
+}
+
+.ico-hsh-home:before {
+    content: "\e905";
+
+}
+
+.ico-hsh-home-menu:before {
+    content: "\e906";
+
+}
+
+.ico-hsh-menu:before {
+    content: "\e907";
+
+}
+
+.ico-hsh-arrow-left-rectangle:before {
+    content: "\e908";
+
+}
+
+.ico-hsh-arrow-up-rectangle:before {
+    content: "\e909";
+
+}
+
+.ico-hsh-arrow-right-rectangle:before {
+    content: "\e90a";
+
+}
+
+.ico-hsh-arrow-down-rectangle:before {
+    content: "\e90b";
+
+}
+
+.ico-hsh-arrow-down1:before {
+    content: "\e90c";
+
+}
+
+.ico-hsh-arrow-left1:before {
+    content: "\e90d";
+
+}
+
+.ico-hsh-arrow-up1:before {
+    content: "\e90e";
+
+}
+
+.ico-hsh-arrow-right1:before {
+    content: "\e90f";
+
+}
+
+.ico-hsh-editor:before {
+    content: "\e910";
+
+}
+
+.ico-hsh-user-settings:before {
+    content: "\e911";
+
+}
+
+.ico-hsh-trash-big:before {
+    content: "\e912";
+
+}
+
+.ico-hsh-cookie:before {
+    content: "\e913";
+
+}
+
+.ico-hsh-copy:before {
+    content: "\e914";
+
+}
+
+.ico-hsh-thumbs-down:before {
+    content: "\e915";
+
+}
+
+.ico-hsh-gate-closed:before {
+    content: "\e916";
+
+}
+
+.ico-hsh-gate-open:before {
+    content: "\e917";
+
+}
+
+.ico-hsh-graph:before {
+    content: "\e918";
+
+}
+
+.ico-hsh-graph-rounded:before {
+    content: "\e919";
+
+}
+
+.ico-hsh-hysteresis:before {
+    content: "\e91a";
+
+}
+
+.ico-hsh-office:before {
+    content: "\e91b";
+
+}
+
+.ico-hsh-gate-little-closed:before {
+    content: "\e91c";
+
+}
+
+.ico-hsh-gate-little-open:before {
+    content: "\e91d";
+
+}
+
+.ico-hsh-thumbs-up:before {
+    content: "\e91f";
+
+}
+
+.ico-hsh-other:before {
+    content: "\e920";
+
+}
+
+.ico-hsh-paper-plane:before {
+    content: "\e922";
+
+}
+
+.ico-hsh-recycle:before {
+    content: "\e923";
+
+}
+
+.ico-hsh-shader-teach1:before {
+    content: "\e924";
+
+}
+
+.ico-hsh-shader-step-down:before {
+    content: "\e925";
+
+}
+
+.ico-hsh-shader-step-up:before {
+    content: "\e926";
+
+}
+
+.ico-hsh-circle:before {
+    content: "\e927";
+
+}
+
+.ico-hsh-bicycle:before {
+    content: "\e928";
+
+}
+
+.ico-hsh-car:before {
+    content: "\e929";
+
+}
+
+.ico-hsh-fillagory:before {
+    content: "\e92a";
+
+}
+
+.ico-hsh-flower-vase:before {
+    content: "\e92b";
+
+}
+
+.ico-hsh-flower-small:before {
+    content: "\e92c";
+
+}
+
+.ico-hsh-flower-big:before {
+    content: "\e92d";
+
+}
+
+.ico-hsh-garage:before {
+    content: "\e92e";
+
+}
+
+.ico-hsh-garage-door:before {
+    content: "\e92f";
+
+}
+
+.ico-hsh-grass:before {
+    content: "\e930";
+
+}
+
+.ico-hsh-watering-sys:before {
+    content: "\e932";
+
+}
+
+.ico-hsh-roof-window:before {
+    content: "\e933";
+
+}
+
+.ico-hsh-curtain-window:before {
+    content: "\e934";
+
+}
+
+.ico-hsh-curtain:before {
+    content: "\e935";
+
+}
+
+.ico-hsh-cloud-complex:before {
+    content: "\e936";
+
+}
+
+.ico-hsh-cloud-simple:before {
+    content: "\e937";
+
+}
+
+.ico-hsh-cloud-sun:before {
+    content: "\e938";
+
+}
+
+.ico-hsh-moon:before {
+    content: "\e939";
+
+}
+
+.ico-hsh-moon-cloud:before {
+    content: "\e93a";
+
+}
+
+.ico-hsh-rain:before {
+    content: "\e93b";
+
+}
+
+.ico-hsh-storm:before {
+    content: "\e93c";
+
+}
+
+.ico-hsh-sun:before {
+    content: "\e93d";
+
+}
+
+.ico-hsh-sun-cycle:before {
+    content: "\e93e";
+
+}
+
+.ico-hsh-wind:before {
+    content: "\e93f";
+
+}
+
+.ico-hsh-coctail:before {
+    content: "\e940";
+
+}
+
+.ico-hsh-bathroom:before {
+    content: "\e941";
+
+}
+
+.ico-hsh-bedroom:before {
+    content: "\e942";
+
+}
+
+.ico-hsh-play-cube:before {
+    content: "\e943";
+
+}
+
+.ico-hsh-child-bed:before {
+    content: "\e944";
+
+}
+
+.ico-hsh-controller:before {
+    content: "\e945";
+
+}
+
+.ico-hsh-corridor:before {
+    content: "\e946";
+
+}
+
+.ico-hsh-cutlery:before {
+    content: "\e947";
+
+}
+
+.ico-hsh-floor:before {
+    content: "\e948";
+
+}
+
+.ico-hsh-pantry:before {
+    content: "\e949";
+
+}
+
+.ico-hsh-couch-big:before {
+    content: "\e94a";
+
+}
+
+.ico-hsh-tv-table:before {
+    content: "\e94b";
+
+}
+
+.ico-hsh-hat:before {
+    content: "\e94c";
+
+}
+
+.ico-hsh-attic:before {
+    content: "\e94d";
+
+}
+
+.ico-hsh-cellar:before {
+    content: "\e94e";
+
+}
+
+.ico-hsh-cellar-house:before {
+    content: "\e94f";
+
+}
+
+.ico-hsh-terrace:before {
+    content: "\e950";
+
+}
+
+.ico-hsh-wc:before {
+    content: "\e951";
+
+}
+
+.ico-hsh-welness-health:before {
+    content: "\e952";
+
+}
+
+.ico-hsh-therm-empty:before {
+    content: "\e953";
+
+}
+
+.ico-hsh-therm-low:before {
+    content: "\e954";
+
+}
+
+.ico-hsh-therm-half:before {
+    content: "\e955";
+
+}
+
+.ico-hsh-therm-full:before {
+    content: "\e956";
+
+}
+
+.ico-hsh-bush:before {
+    content: "\e957";
+
+}
+
+.ico-hsh-epito1:before {
+    content: "\e958";
+
+}
+
+.ico-hsh-gate-closed-fill:before {
+    content: "\e959";
+
+}
+
+.ico-hsh-gate-open-fill:before {
+    content: "\e95a";
+
+}
+
+.ico-hsh-heating:before {
+    content: "\e95b";
+
+}
+
+.ico-hsh-weather-station:before {
+    content: "\e95c";
+
+}
+
+.ico-hsh-gate-little-closed-fill:before {
+    content: "\e95d";
+
+}
+
+.ico-hsh-gate-little-open-fill:before {
+    content: "\e95e";
+
+}
+
+.ico-hsh-led:before {
+    content: "\e95f";
+
+}
+
+.ico-hsh-watering-station:before {
+    content: "\e960";
+
+}
+
+.ico-hsh-pump-rotated:before {
+    content: "\e961";
+
+}
+
+.ico-hsh-user-settings1:before {
+    content: "\e962";
+
+}
+
+.ico-hsh-wall-socket:before {
+    content: "\e963";
+
+}
+
+.ico-hsh-motor:before {
+    content: "\e964";
+
+}
+
+.ico-hsh-motor-front:before {
+    content: "\e965";
+
+}
+
+.ico-hsh-switch-double:before {
+    content: "\e966";
+
+}
+
+.ico-hsh-switch-simple:before {
+    content: "\e967";
+
+}
+
+.ico-hsh-touch:before {
+    content: "\e968";
+
+}
+
+.ico-hsh-wifi:before {
+    content: "\e969";
+
+}
+
+.ico-hsh-thermostat:before {
+    content: "\e96a";
+
+}
+
+.ico-hsh-plus:before {
+    content: "\e96b";
+
+}
+
+.ico-hsh-add-user:before {
+    content: "\e96c";
+
+}
+
+.ico-hsh-check:before {
+    content: "\e96d";
+
+}
+
+.ico-hsh-delete:before {
+    content: "\e96e";
+
+}
+
+.ico-hsh-detect:before {
+    content: "\e96f";
+
+}
+
+.ico-hsh-edit:before {
+    content: "\e970";
+
+}
+
+.ico-hsh-factory-reset:before {
+    content: "\e971";
+
+}
+
+.ico-hsh-trash:before {
+    content: "\e972";
+
+}
+
+.ico-hsh-help:before {
+    content: "\e973";
+
+}
+
+.ico-hsh-lock-locked:before {
+    content: "\e974";
+
+}
+
+.ico-hsh-lock-unlocked:before {
+    content: "\e975";
+
+}
+
+.ico-hsh-language:before {
+    content: "\e976";
+
+}
+
+.ico-hsh-loading:before {
+    content: "\e977";
+
+}
+
+.ico-hsh-login:before {
+    content: "\e978";
+
+}
+
+.ico-hsh-logout:before {
+    content: "\e979";
+
+}
+
+.ico-hsh-magic-stick:before {
+    content: "\e97a";
+
+}
+
+.ico-hsh-microchip:before {
+    content: "\e97b";
+
+}
+
+.ico-hsh-minus:before {
+    content: "\e97c";
+
+}
+
+.ico-hsh-notification:before {
+    content: "\e97d";
+
+}
+
+.ico-hsh-check-empty:before {
+    content: "\e97f";
+
+}
+
+.ico-hsh-plus-empty:before {
+    content: "\e980";
+
+}
+
+.ico-hsh-power:before {
+    content: "\e981";
+
+}
+
+.ico-hsh-remove:before {
+    content: "\e982";
+
+}
+
+.ico-hsh-reset:before {
+    content: "\e983";
+
+}
+
+.ico-hsh-download:before {
+    content: "\e984";
+
+}
+
+.ico-hsh-save:before {
+    content: "\e985";
+
+}
+
+.ico-hsh-cloud-save:before {
+    content: "\e986";
+
+}
+
+.ico-hsh-search:before {
+    content: "\e987";
+
+}
+
+.ico-hsh-set:before {
+    content: "\e988";
+
+}
+
+.ico-hsh-spreadsheet:before {
+    content: "\e989";
+
+}
+
+.ico-hsh-user-add:before {
+    content: "\e98a";
+
+}
+
+.ico-hsh-user-remove:before {
+    content: "\e98b";
+
+}
+
+.ico-hsh-monitor:before {
+    content: "\e98c";
+
+}
+
+.ico-hsh-close:before {
+    content: "\e98d";
+
+}
+
+.ico-hsh-armchair:before {
+    content: "\e98e";
+
+}
+
+.ico-hsh-bed-double:before {
+    content: "\e98f";
+
+}
+
+.ico-hsh-bed-simple:before {
+    content: "\e990";
+
+}
+
+.ico-hsh-child:before {
+    content: "\e991";
+
+}
+
+.ico-hsh-couch:before {
+    content: "\e992";
+
+}
+
+.ico-hsh-door-closed-fill:before {
+    content: "\e993";
+
+}
+
+.ico-hsh-door-open-fill:before {
+    content: "\e994";
+
+}
+
+.ico-hsh-group:before {
+    content: "\e995";
+
+}
+
+.ico-hsh-lamp:before {
+    content: "\e996";
+
+}
+
+.ico-hsh-night-lamp:before {
+    content: "\e997";
+
+}
+
+.ico-hsh-shader-down:before {
+    content: "\e998";
+
+}
+
+.ico-hsh-shader-half:before {
+    content: "\e999";
+
+}
+
+.ico-hsh-shader-up:before {
+    content: "\e99a";
+
+}
+
+.ico-hsh-tv:before {
+    content: "\e99b";
+
+}
+
+.ico-hsh-user:before {
+    content: "\e99c";
+
+}
+
+.ico-hsh-ventillator:before {
+    content: "\e99d";
+
+}
+
+.ico-hsh-window:before {
+    content: "\e99e";
+
+}
+
+.ico-hsh-boiler:before {
+    content: "\e99f";
+
+}
+
+.ico-hsh-group-zone:before {
+    content: "\e9a0";
+
+}
+
+.ico-hsh-heating1:before {
+    content: "\e9a1";
+
+}
+
+.ico-hsh-lightbulb:before {
+    content: "\e9a2";
+
+}
+
+.ico-hsh-zone:before {
+    content: "\e9a3";
+
+}
+
+.ico-hsh-pump:before {
+    content: "\e9a4";
+}
+
+.ico-hsh-shader-teach:before {
+    content: "\e9a5";
+}

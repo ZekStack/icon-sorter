@@ -5,9 +5,12 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "pnpm check:hsh-icons && tsc -b && vite build",
+    "check:hsh-icons": "node scripts/generate-hsh-icon-names.mjs --check",
+    "generate:hsh-icons": "node scripts/generate-hsh-icon-names.mjs",
     "lint": "eslint .",
     "format": "prettier --write \"**/*.{ts,tsx}\"",
+    "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "preview": "vite preview"
   },
@@ -45,6 +48,7 @@
     "prettier-plugin-tailwindcss": "^0.8.0",
     "typescript": "~6",
     "typescript-eslint": "^8",
-    "vite": "^8"
+    "vite": "^8",
+    "vitest": "^3.2.4"
   }
 }
