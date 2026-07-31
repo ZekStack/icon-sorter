@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest"
 
 import {
+  classifyIconsByRules,
+  createAiGroupingPrompt,
   createAiGroupingResponseSchema,
   normalizeIconLabel,
   parseAiGroupingResponse,
@@ -9,47 +11,97 @@ import type { IconGroup, IconReference } from "@/lib/icon-sorter-data"
 
 const groups: IconGroup[] = [
   {
+    id: "navigation",
+    name: "Navigation",
+    createdAt: "2026-07-31T00:00:00.000Z",
+  },
+  {
     id: "security",
     name: "Security & Access",
+    createdAt: "2026-07-31T00:00:00.000Z",
+  },
+  {
+    id: "home",
+    name: "Home & Rooms",
     createdAt: "2026-07-31T00:00:00.000Z",
   },
 ]
 
 const icons: IconReference[] = [
   { type: "HugeIcon", name: "DoorLock02Icon" },
+  { type: "HugeIcon", name: "ArrowDownIcon" },
 ]
 
 describe("AI grouping", () => {
-  it("normalizes Hugeicon and HsH names for the model", () => {
+  it("normalizes Hugeicon and HsH names", () => {
     expect(normalizeIconLabel("DoorLock02Icon")).toBe("door lock 02")
     expect(normalizeIconLabel("garage-door")).toBe("garage door")
   })
 
-  it("constrains ids and group names in the response schema", () => {
-    const schema = createAiGroupingResponseSchema(icons, groups)
-    const item = schema.properties.results.items
+  it("groups obvious icon names without invoking AI", () => {
+    const result = classifyIconsByRules(icons, groups)
 
-    expect(item.properties.id.enum).toEqual(["HugeIcon:DoorLock02Icon"])
-    expect(item.properties.group.enum).toEqual(["Security & Access"])
+    expect(result.classifications).toEqual([
+      {
+        type: "HugeIcon",
+        name: "DoorLock02Icon",
+        groupId: "security",
+        source: "rule",
+      },
+      {
+        type: "HugeIcon",
+        name: "ArrowDownIcon",
+        groupId: "navigation",
+        source: "rule",
+      },
+    ])
+    expect(result.unresolvedIcons).toEqual([])
   })
 
-  it("parses valid classifications and reports missing icons", () => {
-    const secondIcon: IconReference = {
-      type: "HsHIcon",
-      name: "garage-door",
+  it("leaves tied or custom-taxonomy matches for AI", () => {
+    const ambiguous: IconReference = {
+      type: "HugeIcon",
+      name: "HomeMenuIcon",
     }
+    const customGroups: IconGroup[] = [
+      {
+        id: "custom",
+        name: "My custom category",
+        createdAt: "2026-07-31T00:00:00.000Z",
+      },
+    ]
+
+    expect(classifyIconsByRules([ambiguous], groups).unresolvedIcons).toEqual([
+      ambiguous,
+    ])
+    expect(
+      classifyIconsByRules(icons, customGroups).unresolvedIcons
+    ).toEqual(icons)
+  })
+
+  it("uses compact positional prompts and integer-array responses", () => {
+    expect(JSON.parse(createAiGroupingPrompt(icons))).toEqual([
+      "door lock 02",
+      "arrow down",
+    ])
+
+    const schema = createAiGroupingResponseSchema(icons, groups)
+    expect(schema).toMatchObject({
+      type: "array",
+      minItems: 2,
+      maxItems: 2,
+      items: {
+        type: "integer",
+        minimum: 0,
+        maximum: 2,
+      },
+    })
+  })
+
+  it("maps positional group indexes and reports invalid results", () => {
     const result = parseAiGroupingResponse(
-      JSON.stringify({
-        results: [
-          {
-            id: "HugeIcon:DoorLock02Icon",
-            group: "Security & Access",
-            keywords: ["door", "lock", "ajtó", "door"],
-            confidence: "high",
-          },
-        ],
-      }),
-      [...icons, secondIcon],
+      JSON.stringify([1, 99]),
+      icons,
       groups
     )
 
@@ -58,10 +110,9 @@ describe("AI grouping", () => {
         type: "HugeIcon",
         name: "DoorLock02Icon",
         groupId: "security",
-        keywords: ["door", "lock", "ajtó"],
-        confidence: "high",
+        source: "ai",
       },
     ])
-    expect(result.missingIcons).toEqual([secondIcon])
+    expect(result.missingIcons).toEqual([icons[1]])
   })
 })
