@@ -1,11 +1,11 @@
 import {
   iconId,
-  normalizeKeywords,
   type IconGroup,
   type IconReference,
 } from "@/lib/icon-sorter-data"
 
-export const AI_GROUPING_BATCH_SIZE = 12
+export const AI_GROUPING_BATCH_SIZE = 64
+export const AI_GROUPING_MIN_BATCH_SIZE = 8
 
 export const DEFAULT_AI_GROUPS = [
   "Navigation",
@@ -30,24 +30,158 @@ export const DEFAULT_AI_GROUPS = [
   "Miscellaneous",
 ] as const
 
-export type AiGroupingConfidence = "high" | "medium" | "low"
+export type AiGroupingSource = "rule" | "ai"
 
 export type AiIconClassification = IconReference & {
   groupId: string
-  keywords: string[]
-  confidence: AiGroupingConfidence
+  source: AiGroupingSource
 }
 
-type RawClassification = {
-  id?: unknown
-  group?: unknown
-  keywords?: unknown
-  confidence?: unknown
+type GroupRule = {
+  groupName: (typeof DEFAULT_AI_GROUPS)[number]
+  terms: readonly string[]
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value)
-}
+const GROUP_RULES: readonly GroupRule[] = [
+  {
+    groupName: "Navigation",
+    terms: [
+      "arrow", "chevron", "navigation", "direction", "compass", "route",
+      "cursor", "back", "forward", "previous", "next", "expand",
+      "collapse", "menu",
+    ],
+  },
+  {
+    groupName: "Actions & Editing",
+    terms: [
+      "add", "remove", "edit", "delete", "trash", "copy", "cut", "paste",
+      "undo", "redo", "refresh", "reload", "search", "filter", "sort",
+      "save", "check", "close", "plus", "minus", "magic", "wand",
+    ],
+  },
+  {
+    groupName: "Status & Feedback",
+    terms: [
+      "alert", "warning", "error", "info", "question", "help", "loading",
+      "success", "failure", "thumbs up", "thumbs down", "notification",
+    ],
+  },
+  {
+    groupName: "Files & Data",
+    terms: [
+      "file", "folder", "document", "database", "archive", "download",
+      "upload", "spreadsheet", "table", "data", "cloud save",
+    ],
+  },
+  {
+    groupName: "Communication",
+    terms: [
+      "mail", "email", "message", "chat", "conversation", "phone", "call",
+      "send", "paper plane", "inbox", "contact",
+    ],
+  },
+  {
+    groupName: "Users & Authentication",
+    terms: [
+      "user", "users", "account", "profile", "login", "logout", "password",
+      "authentication", "fingerprint", "face id", "identity",
+    ],
+  },
+  {
+    groupName: "Home & Rooms",
+    terms: [
+      "home", "house", "room", "bedroom", "bathroom", "kitchen", "garage",
+      "terrace", "attic", "cellar", "office", "corridor", "pantry", "couch",
+      "sofa", "bed", "armchair", "wc", "wellness",
+    ],
+  },
+  {
+    groupName: "Lighting & Electrical",
+    terms: [
+      "lamp", "light", "lightbulb", "bulb", "led", "socket", "plug",
+      "electric", "electricity", "battery", "power", "switch",
+    ],
+  },
+  {
+    groupName: "Climate & Heating",
+    terms: [
+      "thermostat", "temperature", "therm", "heating", "heater", "boiler",
+      "radiator", "ventillator", "ventilator", "fan", "air conditioner",
+      "climate", "hysteresis",
+    ],
+  },
+  {
+    groupName: "Weather",
+    terms: [
+      "weather", "sun", "moon", "cloud", "rain", "snow", "storm", "wind",
+      "thunder", "forecast",
+    ],
+  },
+  {
+    groupName: "Security & Access",
+    terms: [
+      "lock", "unlock", "key", "shield", "security", "door", "gate",
+      "access", "alarm", "detect",
+    ],
+  },
+  {
+    groupName: "Shading & Windows",
+    terms: [
+      "curtain", "blind", "shade", "shader", "shutter", "window",
+      "roof window",
+    ],
+  },
+  {
+    groupName: "Water & Irrigation",
+    terms: [
+      "water", "droplet", "drop", "pump", "watering", "irrigation",
+      "faucet", "shower", "bath",
+    ],
+  },
+  {
+    groupName: "Devices & Appliances",
+    terms: [
+      "device", "controller", "remote", "monitor", "television", "tv",
+      "appliance", "refrigerator", "washing machine", "robot", "motor",
+    ],
+  },
+  {
+    groupName: "Media",
+    terms: [
+      "play", "pause", "stop", "music", "audio", "video", "camera", "image",
+      "photo", "microphone", "volume", "film", "record",
+    ],
+  },
+  {
+    groupName: "Transportation",
+    terms: [
+      "car", "bike", "bicycle", "bus", "train", "plane", "ship", "vehicle",
+      "truck", "motorcycle",
+    ],
+  },
+  {
+    groupName: "Nature & Outdoors",
+    terms: [
+      "flower", "tree", "grass", "bush", "leaf", "garden", "mountain",
+      "earth", "plant", "outdoor",
+    ],
+  },
+  {
+    groupName: "Development & System",
+    terms: [
+      "code", "terminal", "bug", "developer", "server", "api", "system",
+      "microchip", "chip", "cpu", "factory reset", "wifi", "bluetooth",
+      "network",
+    ],
+  },
+  {
+    groupName: "Commerce",
+    terms: [
+      "cart", "shopping", "money", "wallet", "credit", "bank", "dollar",
+      "euro", "shop", "store", "receipt", "payment",
+    ],
+  },
+]
 
 export function normalizeIconLabel(name: string) {
   return name
@@ -60,30 +194,76 @@ export function normalizeIconLabel(name: string) {
     .toLowerCase()
 }
 
+function scoreRule(label: string, tokens: Set<string>, rule: GroupRule) {
+  return rule.terms.reduce((score, term) => {
+    if (term.includes(" ")) {
+      return score + (label.includes(term) ? 3 : 0)
+    }
+
+    return score + (tokens.has(term) ? 1 : 0)
+  }, 0)
+}
+
+export function classifyIconsByRules(
+  icons: IconReference[],
+  groups: IconGroup[]
+) {
+  const groupsByName = new Map(
+    groups.map((group) => [group.name.toLowerCase(), group] as const)
+  )
+  const availableRules = GROUP_RULES.flatMap((rule) => {
+    const group = groupsByName.get(rule.groupName.toLowerCase())
+    return group ? [{ rule, group }] : []
+  })
+  const classifications: AiIconClassification[] = []
+  const unresolvedIcons: IconReference[] = []
+
+  for (const icon of icons) {
+    const label = normalizeIconLabel(icon.name)
+    const tokens = new Set(label.split(" ").filter(Boolean))
+    const matches = availableRules
+      .map(({ rule, group }) => ({
+        group,
+        score: scoreRule(label, tokens, rule),
+      }))
+      .filter((match) => match.score > 0)
+      .sort((left, right) => right.score - left.score)
+
+    const best = matches[0]
+    const runnerUp = matches[1]
+    if (!best || (runnerUp && runnerUp.score === best.score)) {
+      unresolvedIcons.push(icon)
+      continue
+    }
+
+    classifications.push({
+      type: icon.type,
+      name: icon.name,
+      groupId: best.group.id,
+      source: "rule",
+    })
+  }
+
+  return { classifications, unresolvedIcons }
+}
+
 export function createAiGroupingSystemPrompt(groups: IconGroup[]) {
-  const taxonomy = groups.map((group) => `- ${group.name}`).join("\n")
+  const taxonomy = groups
+    .map((group, index) => `${index}: ${group.name}`)
+    .join("\n")
 
   return [
-    "You classify icon names for a multilingual icon search library.",
-    "Use only the exact group names from the approved taxonomy.",
-    "Create concise search keywords that describe the icon, its object, action, state, and common synonyms.",
-    "Include useful English and Hungarian keywords when the meaning is clear.",
-    "Do not invent product behavior that is not implied by the icon name.",
-    "Numbered icon variants normally belong to the same group.",
-    "Return exactly one result for every supplied icon and copy each id exactly.",
-    "Approved taxonomy:",
+    "Classify icon names into the indexed taxonomy.",
+    "Return exactly one integer group index for every input item, in the same order.",
+    "Do not return icon names, keywords, confidence values, objects, or explanations.",
+    "Numbered visual variants normally use the same group.",
+    "Taxonomy:",
     taxonomy,
   ].join("\n")
 }
 
 export function createAiGroupingPrompt(icons: IconReference[]) {
-  return JSON.stringify({
-    task: "Classify every icon into one approved group and generate search keywords.",
-    icons: icons.map((icon) => ({
-      id: iconId(icon),
-      label: normalizeIconLabel(icon.name),
-    })),
-  })
+  return JSON.stringify(icons.map((icon) => normalizeIconLabel(icon.name)))
 }
 
 export function createAiGroupingResponseSchema(
@@ -91,37 +271,14 @@ export function createAiGroupingResponseSchema(
   groups: IconGroup[]
 ) {
   return {
-    type: "object",
-    properties: {
-      results: {
-        type: "array",
-        items: {
-          type: "object",
-          properties: {
-            id: {
-              type: "string",
-              enum: icons.map(iconId),
-            },
-            group: {
-              type: "string",
-              enum: groups.map((group) => group.name),
-            },
-            keywords: {
-              type: "array",
-              items: { type: "string" },
-            },
-            confidence: {
-              type: "string",
-              enum: ["high", "medium", "low"],
-            },
-          },
-          required: ["id", "group", "keywords", "confidence"],
-          additionalProperties: false,
-        },
-      },
+    type: "array",
+    items: {
+      type: "integer",
+      minimum: 0,
+      maximum: Math.max(groups.length - 1, 0),
     },
-    required: ["results"],
-    additionalProperties: false,
+    minItems: icons.length,
+    maxItems: icons.length,
   } as const
 }
 
@@ -131,50 +288,36 @@ export function parseAiGroupingResponse(
   groups: IconGroup[]
 ) {
   const parsed: unknown = JSON.parse(response)
-  if (!isRecord(parsed) || !Array.isArray(parsed.results)) {
+  if (!Array.isArray(parsed)) {
     throw new Error("invalid-ai-response")
   }
 
-  const iconsById = new Map(icons.map((icon) => [iconId(icon), icon] as const))
-  const groupsByName = new Map(
-    groups.map((group) => [group.name.toLowerCase(), group] as const)
-  )
-  const classifications = new Map<string, AiIconClassification>()
+  const classifications: AiIconClassification[] = []
+  const classifiedIds = new Set<string>()
 
-  for (const candidate of parsed.results) {
-    if (!isRecord(candidate)) {
+  for (let index = 0; index < icons.length; index += 1) {
+    const groupIndex = parsed[index]
+    const icon = icons[index]
+    if (
+      !icon ||
+      typeof groupIndex !== "number" ||
+      !Number.isInteger(groupIndex) ||
+      !groups[groupIndex]
+    ) {
       continue
     }
 
-    const raw = candidate as RawClassification
-    if (typeof raw.id !== "string" || typeof raw.group !== "string") {
-      continue
-    }
-
-    const icon = iconsById.get(raw.id)
-    const group = groupsByName.get(raw.group.trim().toLowerCase())
-    if (!icon || !group || classifications.has(raw.id)) {
-      continue
-    }
-
-    const confidence: AiGroupingConfidence =
-      raw.confidence === "high" ||
-      raw.confidence === "medium" ||
-      raw.confidence === "low"
-        ? raw.confidence
-        : "medium"
-
-    classifications.set(raw.id, {
+    classifications.push({
       type: icon.type,
       name: icon.name,
-      groupId: group.id,
-      keywords: normalizeKeywords(raw.keywords).slice(0, 12),
-      confidence,
+      groupId: groups[groupIndex].id,
+      source: "ai",
     })
+    classifiedIds.add(iconId(icon))
   }
 
   return {
-    classifications: [...classifications.values()],
-    missingIcons: icons.filter((icon) => !classifications.has(iconId(icon))),
+    classifications,
+    missingIcons: icons.filter((icon) => !classifiedIds.has(iconId(icon))),
   }
 }
