@@ -6,6 +6,7 @@ import {
   Languages,
   ListFilter,
   Moon,
+  Sparkles,
   Sun,
 } from "lucide-react"
 import { useTranslation } from "react-i18next"
@@ -18,6 +19,7 @@ import { cn } from "@/lib/utils"
 
 const links = [
   { to: "/", labelKey: "nav.sort", icon: ListFilter },
+  { to: "/ai-grouping", labelKey: "nav.aiGrouping", icon: Sparkles },
   { to: "/library", labelKey: "nav.library", icon: Grid2X2 },
   { to: "/discarded", labelKey: "nav.discarded", icon: ArchiveX },
 ] as const
@@ -65,7 +67,12 @@ export function AppShell() {
           <nav className="flex items-center gap-1">
             {links.map((item) => {
               const Icon = item.icon
-              const label = t(item.labelKey)
+              const label =
+                item.to === "/ai-grouping"
+                  ? language === "hu"
+                    ? "AI csoportosítás"
+                    : "AI grouping"
+                  : t(item.labelKey)
               return (
                 <Link
                   key={item.to}
