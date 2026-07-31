@@ -44,6 +44,7 @@ export type IconSorterImportResult = {
 }
 
 type AssignIconInput = Omit<SavedIcon, "savedAt">
+type UpdateIconKeywordsInput = IconReference & { keywords: IconKeywords }
 
 type IconSorterContextValue = {
   data: IconSorterData
@@ -55,6 +56,7 @@ type IconSorterContextValue = {
   assignIcons: (icons: AssignIconInput[]) => void
   moveIcon: (icon: IconReference, groupId: string) => void
   updateIconKeywords: (icon: IconReference, keywords: IconKeywords) => void
+  updateIconsKeywords: (icons: UpdateIconKeywordsInput[]) => void
   removeIcon: (icon: IconReference) => void
   discardIcon: (icon: IconReference, color?: string) => void
   restoreDiscardedIcon: (icon: IconReference) => void
@@ -264,19 +266,41 @@ export function IconSorterProvider({ children }: { children: ReactNode }) {
     })
   }, [])
 
-  const updateIconKeywords = useCallback(
-    (icon: IconReference, keywords: IconKeywords) => {
-      const targetId = iconId(icon)
-      setData((current) => ({
-        ...current,
-        icons: current.icons.map((savedIcon) =>
-          iconId(savedIcon) === targetId
-            ? { ...savedIcon, keywords: normalizeKeywords(keywords) }
-            : savedIcon
-        ),
-      }))
+  const updateIconsKeywords = useCallback(
+    (icons: UpdateIconKeywordsInput[]) => {
+      if (icons.length === 0) {
+        return
+      }
+
+      const keywordsById = new Map(
+        icons.map(
+          (icon) =>
+            [iconId(icon), normalizeKeywords(icon.keywords)] as const
+        )
+      )
+      setData((current) => {
+        let changed = false
+        const savedIcons = current.icons.map((savedIcon) => {
+          const keywords = keywordsById.get(iconId(savedIcon))
+          if (!keywords) {
+            return savedIcon
+          }
+
+          changed = true
+          return { ...savedIcon, keywords }
+        })
+
+        return changed ? { ...current, icons: savedIcons } : current
+      })
     },
     []
+  )
+
+  const updateIconKeywords = useCallback(
+    (icon: IconReference, keywords: IconKeywords) => {
+      updateIconsKeywords([{ ...icon, keywords }])
+    },
+    [updateIconsKeywords]
   )
 
   const removeIcon = useCallback((icon: IconReference) => {
@@ -404,6 +428,7 @@ export function IconSorterProvider({ children }: { children: ReactNode }) {
       assignIcons,
       moveIcon,
       updateIconKeywords,
+      updateIconsKeywords,
       removeIcon,
       discardIcon,
       restoreDiscardedIcon,
@@ -420,6 +445,7 @@ export function IconSorterProvider({ children }: { children: ReactNode }) {
       assignIcons,
       moveIcon,
       updateIconKeywords,
+      updateIconsKeywords,
       removeIcon,
       discardIcon,
       restoreDiscardedIcon,
