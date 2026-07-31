@@ -23,11 +23,17 @@ import {
   ConfirmWarning,
   useConfirm,
 } from "@/components/custom/confirm-dialog"
+import { useSelect } from "@/components/custom/select-dialog"
 import { IconPreview } from "@/components/icon-preview"
 import { IconTypeBadge } from "@/components/icon-type-badge"
 import { IconTypeFilterControl } from "@/components/icon-type-filter"
-import { useSelect } from "@/components/custom/select-dialog"
 import { KeywordTextarea } from "@/components/keyword-textarea"
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -276,103 +282,109 @@ export function LibraryPage() {
             {t("library.noGroups")}
           </div>
         ) : (
-          <div className="grid gap-8">
+          <Accordion multiple className="grid gap-3">
             {data.groups.map((group) => {
               const groupIcons = visibleIcons.filter(
                 (icon) => icon.groupId === group.id
               )
 
               return (
-                <section key={group.id} className="grid gap-3">
-                  <div className="flex min-h-10 items-center gap-2 border-b pb-2">
-                    {editingGroupId === group.id ? (
-                      <form
-                        className="flex flex-1 items-center gap-2"
-                        onSubmit={saveGroupEdit}
+                <AccordionItem
+                  key={group.id}
+                  value={group.id}
+                  className="overflow-hidden rounded-xl border bg-background last:border-b"
+                >
+                  {editingGroupId === group.id ? (
+                    <form
+                      className="flex min-h-14 items-center gap-2 p-2 sm:px-3"
+                      onSubmit={saveGroupEdit}
+                    >
+                      <Input
+                        autoFocus
+                        value={editingGroupName}
+                        onChange={(event) =>
+                          setEditingGroupName(event.target.value)
+                        }
+                      />
+                      <Button type="submit" size="sm">
+                        {t("library.saveGroup")}
+                      </Button>
+                      <Button
+                        type="button"
+                        size="icon-sm"
+                        variant="ghost"
+                        aria-label={t("library.cancelGroupEdit")}
+                        onClick={() => setEditingGroupId(null)}
                       >
-                        <Input
-                          autoFocus
-                          value={editingGroupName}
-                          onChange={(event) =>
-                            setEditingGroupName(event.target.value)
-                          }
-                        />
-                        <Button type="submit" size="sm">
-                          {t("library.saveGroup")}
-                        </Button>
-                        <Button
-                          type="button"
-                          size="icon-sm"
-                          variant="ghost"
-                          aria-label={t("library.cancelGroupEdit")}
-                          onClick={() => setEditingGroupId(null)}
-                        >
-                          <X />
-                        </Button>
-                      </form>
-                    ) : (
-                      <>
-                        <div className="min-w-0 flex-1 truncate font-semibold">
+                        <X />
+                      </Button>
+                    </form>
+                  ) : (
+                    <div className="flex min-w-0 items-center gap-1 px-2 sm:px-3">
+                      <AccordionTrigger className="min-h-14 py-2 hover:no-underline">
+                        <span className="min-w-0 flex-1 truncate font-semibold">
                           {group.name}
-                        </div>
-                        <Badge>
+                        </span>
+                        <Badge className="shrink-0">
                           {groupIcons.length.toLocaleString(locale)}
                         </Badge>
-                        <Button
-                          size="icon-sm"
-                          variant="ghost"
-                          aria-label={t("library.renameGroup", {
-                            name: group.name,
-                          })}
-                          title={t("library.renameGroup", { name: group.name })}
-                          onClick={() => startGroupEdit(group.id, group.name)}
-                        >
-                          <Pencil />
-                        </Button>
-                        <Button
-                          size="icon-sm"
-                          variant="destructive"
-                          aria-label={t("library.removeGroup", {
-                            name: group.name,
-                          })}
-                          title={t("library.removeGroup", {
-                            name: group.name,
-                          })}
-                          onClick={() =>
-                            void handleRemoveGroup(group.id, group.name)
-                          }
-                        >
-                          <Trash2 />
-                        </Button>
-                      </>
-                    )}
-                  </div>
-
-                  {groupIcons.length === 0 ? (
-                    <div className="rounded-lg border border-dashed px-4 py-6 text-sm text-muted-foreground">
-                      {normalizedSearch || iconTypeFilter !== "all"
-                        ? t("library.noMatches")
-                        : t("library.emptyGroup")}
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-1 gap-px overflow-hidden rounded-xl border bg-border sm:grid-cols-2 xl:grid-cols-3">
-                      {groupIcons.map((icon) => (
-                        <IconRow
-                          key={iconId(icon)}
-                          icon={icon}
-                          groups={data.groups}
-                          onMove={(groupId) => moveIcon(icon, groupId)}
-                          onEdit={() => openIconEditor(icon)}
-                          onRemove={() => removeIcon(icon)}
-                          onDiscard={() => discardIcon(icon)}
-                        />
-                      ))}
+                      </AccordionTrigger>
+                      <Button
+                        size="icon-sm"
+                        variant="ghost"
+                        aria-label={t("library.renameGroup", {
+                          name: group.name,
+                        })}
+                        title={t("library.renameGroup", { name: group.name })}
+                        onClick={() => startGroupEdit(group.id, group.name)}
+                      >
+                        <Pencil />
+                      </Button>
+                      <Button
+                        size="icon-sm"
+                        variant="destructive"
+                        aria-label={t("library.removeGroup", {
+                          name: group.name,
+                        })}
+                        title={t("library.removeGroup", {
+                          name: group.name,
+                        })}
+                        onClick={() =>
+                          void handleRemoveGroup(group.id, group.name)
+                        }
+                      >
+                        <Trash2 />
+                      </Button>
                     </div>
                   )}
-                </section>
+
+                  <AccordionContent className="border-t p-3 sm:p-4">
+                    {groupIcons.length === 0 ? (
+                      <div className="rounded-lg border border-dashed px-4 py-6 text-sm text-muted-foreground">
+                        {normalizedSearch || iconTypeFilter !== "all"
+                          ? t("library.noMatches")
+                          : t("library.emptyGroup")}
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 gap-px overflow-hidden rounded-xl border bg-border sm:grid-cols-2 xl:grid-cols-3">
+                        {groupIcons.map((icon) => (
+                          <IconRow
+                            key={iconId(icon)}
+                            icon={icon}
+                            groups={data.groups}
+                            onMove={(groupId) => moveIcon(icon, groupId)}
+                            onEdit={() => openIconEditor(icon)}
+                            onRemove={() => removeIcon(icon)}
+                            onDiscard={() => discardIcon(icon)}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </AccordionContent>
+                </AccordionItem>
               )
             })}
-          </div>
+          </Accordion>
         )}
       </div>
 
