@@ -7,11 +7,14 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
   AI_GROUPING_BATCH_SIZE,
+  AI_GROUPING_MIN_BATCH_SIZE,
   DEFAULT_AI_GROUPS,
+  classifyIconsByRules,
   createAiGroupingPrompt,
   createAiGroupingResponseSchema,
   createAiGroupingSystemPrompt,
   parseAiGroupingResponse,
+  type AiGroupingSource,
   type AiIconClassification,
 } from "@/features/ai-grouping/ai-grouping"
 import { iconCatalog } from "@/lib/icon-catalog"
@@ -30,8 +33,11 @@ const MODEL_CAPABILITIES = {
   expectedOutputs: [{ type: "text", languages: ["en"] }],
 } as const
 
+const LIVE_UPDATE_CHUNK_SIZE = 64
+
 type AiGroupingStatus =
   | "idle"
+  | "rules"
   | "checking"
   | "downloading"
   | "preparing"
@@ -85,7 +91,8 @@ type LanguageModelFactory = {
 type AiProgress = {
   total: number
   processed: number
-  assigned: number
+  assignedByRules: number
+  assignedByAi: number
   failed: number
 }
 
@@ -98,13 +105,19 @@ type AiCopy = {
   pause: string
   resume: string
   stop: string
-  assigned: string
+  rules: string
+  ai: string
   failed: string
   remaining: string
   unavailable: string
   error: (message: string) => string
   status: Record<AiGroupingStatus, string>
-  confidence: Record<AiIconClassification["confidence"], string>
+  source: Record<AiGroupingSource, string>
+}
+
+type BatchResult = {
+  classifications: AiIconClassification[]
+  missingIcons: IconReference[]
 }
 
 const AI_COPY: Record<"en" | "hu", AiCopy> = {
@@ -112,24 +125,26 @@ const AI_COPY: Record<"en" | "hu", AiCopy> = {
     title: "AI grouping",
     local: "Runs locally",
     description: (count) =>
-      `Classify ${count} remaining icons with Chrome's built-in AI and save each completed batch immediately.`,
-    start: "Start AI grouping",
+      `Group ${count} remaining icons with instant name rules, then use Chrome's built-in AI only for ambiguous names. Keywords are left empty.`,
+    start: "Start fast grouping",
     retry: "Group remaining icons",
     pause: "Pause",
     resume: "Resume",
     stop: "Stop",
-    assigned: "Assigned",
+    rules: "Rule grouped",
+    ai: "AI grouped",
     failed: "Needs retry",
     remaining: "Remaining",
     unavailable:
-      "Built-in AI is unavailable. Use Chrome 148 or newer on a supported desktop device with the Prompt API enabled.",
+      "Built-in AI is unavailable. Obvious icons were still grouped with local rules; use Chrome 148 or newer to classify the remaining ambiguous icons.",
     error: (message) => `AI grouping failed: ${message}`,
     status: {
       idle: "Ready",
+      rules: "Applying fast local grouping rules…",
       checking: "Checking browser AI availability…",
       downloading: "Downloading the browser AI model…",
       preparing: "Preparing the local model…",
-      running: "Grouping icons…",
+      running: "Classifying ambiguous icons…",
       pausing: "Finishing the current batch…",
       paused: "Paused",
       stopped: "Stopped",
@@ -137,34 +152,35 @@ const AI_COPY: Record<"en" | "hu", AiCopy> = {
       unavailable: "Browser AI unavailable",
       error: "Grouping failed",
     },
-    confidence: {
-      high: "High confidence",
-      medium: "Medium confidence",
-      low: "Low confidence",
+    source: {
+      rule: "Local rule",
+      ai: "Browser AI",
     },
   },
   hu: {
     title: "AI csoportosítás",
     local: "Helyben fut",
     description: (count) =>
-      `A Chrome beépített AI-ja ${count} hátralévő ikont csoportosít, és minden elkészült köteget azonnal elment.`,
-    start: "AI csoportosítás indítása",
+      `${count} hátralévő ikon gyors csoportosítása névszabályokkal, majd csak a bizonytalan neveknél a Chrome beépített AI-jával. Kulcsszavakat nem hoz létre.`,
+    start: "Gyors csoportosítás indítása",
     retry: "Hátralévő ikonok csoportosítása",
     pause: "Szünet",
     resume: "Folytatás",
     stop: "Leállítás",
-    assigned: "Hozzárendelve",
+    rules: "Szabállyal rendezve",
+    ai: "AI-val rendezve",
     failed: "Újrapróbálandó",
     remaining: "Hátralévő",
     unavailable:
-      "A beépített AI nem érhető el. Használj Chrome 148 vagy újabb verziót támogatott asztali gépen, engedélyezett Prompt API-val.",
+      "A beépített AI nem érhető el. Az egyértelmű ikonokat a helyi szabályok így is csoportosították; a bizonytalan ikonokhoz Chrome 148 vagy újabb verzió szükséges.",
     error: (message) => `Az AI csoportosítás sikertelen: ${message}`,
     status: {
       idle: "Indításra kész",
+      rules: "Gyors helyi csoportosítási szabályok alkalmazása…",
       checking: "A böngésző AI elérhetőségének ellenőrzése…",
       downloading: "A böngésző AI modelljének letöltése…",
       preparing: "A helyi modell előkészítése…",
-      running: "Ikonok csoportosítása…",
+      running: "Bizonytalan ikonok csoportosítása…",
       pausing: "Az aktuális köteg befejezése…",
       paused: "Szüneteltetve",
       stopped: "Leállítva",
@@ -172,10 +188,9 @@ const AI_COPY: Record<"en" | "hu", AiCopy> = {
       unavailable: "A böngésző AI nem érhető el",
       error: "A csoportosítás sikertelen",
     },
-    confidence: {
-      high: "Magas bizonyosság",
-      medium: "Közepes bizonyosság",
-      low: "Alacsony bizonyosság",
+    source: {
+      rule: "Helyi szabály",
+      ai: "Böngésző AI",
     },
   },
 }
@@ -192,8 +207,74 @@ function isAbortError(error: unknown) {
   return error instanceof DOMException && error.name === "AbortError"
 }
 
-function yieldToBrowser() {
-  return new Promise<void>((resolve) => window.setTimeout(resolve, 0))
+function nextPaint() {
+  return new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()))
+}
+
+async function classifyAiBatch(
+  session: LanguageModelSession,
+  icons: IconReference[],
+  groups: IconGroup[],
+  signal: AbortSignal
+): Promise<BatchResult> {
+  let clone: LanguageModelSession | null = null
+
+  try {
+    clone = await session.clone({ signal })
+    const response = await clone.prompt(createAiGroupingPrompt(icons), {
+      signal,
+      responseConstraint: createAiGroupingResponseSchema(icons, groups),
+    })
+    clone.destroy()
+    clone = null
+    const parsed = parseAiGroupingResponse(response, icons, groups)
+
+    if (
+      parsed.missingIcons.length === 0 ||
+      icons.length <= AI_GROUPING_MIN_BATCH_SIZE
+    ) {
+      return parsed
+    }
+
+    const retry = await classifyAiBatch(
+      session,
+      parsed.missingIcons,
+      groups,
+      signal
+    )
+    return {
+      classifications: [...parsed.classifications, ...retry.classifications],
+      missingIcons: retry.missingIcons,
+    }
+  } catch (error) {
+    if (isAbortError(error) || signal.aborted) {
+      throw error
+    }
+
+    if (icons.length <= AI_GROUPING_MIN_BATCH_SIZE) {
+      return { classifications: [], missingIcons: icons }
+    }
+
+    const midpoint = Math.ceil(icons.length / 2)
+    const left = await classifyAiBatch(
+      session,
+      icons.slice(0, midpoint),
+      groups,
+      signal
+    )
+    const right = await classifyAiBatch(
+      session,
+      icons.slice(midpoint),
+      groups,
+      signal
+    )
+    return {
+      classifications: [...left.classifications, ...right.classifications],
+      missingIcons: [...left.missingIcons, ...right.missingIcons],
+    }
+  } finally {
+    clone?.destroy()
+  }
 }
 
 export function AiGroupingPanel() {
@@ -207,7 +288,8 @@ export function AiGroupingPanel() {
   const [progress, setProgress] = useState<AiProgress>({
     total: 0,
     processed: 0,
-    assigned: 0,
+    assignedByRules: 0,
+    assignedByAi: 0,
     failed: 0,
   })
   const [currentResult, setCurrentResult] =
@@ -240,7 +322,52 @@ export function AiGroupingPanel() {
     sessionRef.current = null
   }, [])
 
-  const runQueue = useCallback(async () => {
+  const applyClassifications = useCallback(
+    async (
+      classifications: AiIconClassification[],
+      signal: AbortSignal
+    ) => {
+      for (
+        let index = 0;
+        index < classifications.length;
+        index += LIVE_UPDATE_CHUNK_SIZE
+      ) {
+        if (signal.aborted) {
+          throw new DOMException("Grouping aborted", "AbortError")
+        }
+
+        const chunk = classifications.slice(
+          index,
+          index + LIVE_UPDATE_CHUNK_SIZE
+        )
+        assignIcons(
+          chunk.map((classification) => ({
+            type: classification.type,
+            name: classification.name,
+            groupId: classification.groupId,
+            keywords: [],
+            color: DEFAULT_ICON_COLOR,
+          }))
+        )
+
+        const ruleCount = chunk.filter(
+          (classification) => classification.source === "rule"
+        ).length
+        const aiCount = chunk.length - ruleCount
+        setCurrentResult(chunk.at(-1) ?? null)
+        setProgress((current) => ({
+          ...current,
+          processed: current.processed + chunk.length,
+          assignedByRules: current.assignedByRules + ruleCount,
+          assignedByAi: current.assignedByAi + aiCount,
+        }))
+        await nextPaint()
+      }
+    },
+    [assignIcons]
+  )
+
+  const runAiQueue = useCallback(async () => {
     const session = sessionRef.current
     const groups = groupsRef.current
     const signal = abortRef.current?.signal
@@ -258,61 +385,17 @@ export function AiGroupingPanel() {
         cursorRef.current,
         cursorRef.current + AI_GROUPING_BATCH_SIZE
       )
-      let clone: LanguageModelSession | null = null
-      let classifications: AiIconClassification[] = []
-      let failedCount = batch.length
+      const result = await classifyAiBatch(session, batch, groups, signal)
 
-      try {
-        clone = await session.clone({ signal })
-        const response = await clone.prompt(createAiGroupingPrompt(batch), {
-          signal,
-          responseConstraint: createAiGroupingResponseSchema(batch, groups),
-        })
-        const parsed = parseAiGroupingResponse(response, batch, groups)
-        const classificationsById = new Map(
-          parsed.classifications.map((item) => [iconId(item), item] as const)
-        )
-        classifications = batch.flatMap((icon) => {
-          const classification = classificationsById.get(iconId(icon))
-          return classification ? [classification] : []
-        })
-        failedCount = parsed.missingIcons.length
-      } catch (error) {
-        if (isAbortError(error) || signal.aborted) {
-          throw error
-        }
-        failedCount = batch.length
-      } finally {
-        clone?.destroy()
+      if (result.classifications.length > 0) {
+        await applyClassifications(result.classifications, signal)
       }
 
-      if (classifications.length > 0) {
-        assignIcons(
-          classifications.map((classification) => ({
-            type: classification.type,
-            name: classification.name,
-            groupId: classification.groupId,
-            keywords: classification.keywords,
-            color: DEFAULT_ICON_COLOR,
-          }))
-        )
-
-        for (const classification of classifications) {
-          setCurrentResult(classification)
-          setProgress((current) => ({
-            ...current,
-            processed: current.processed + 1,
-            assigned: current.assigned + 1,
-          }))
-          await yieldToBrowser()
-        }
-      }
-
-      if (failedCount > 0) {
+      if (result.missingIcons.length > 0) {
         setProgress((current) => ({
           ...current,
-          processed: current.processed + failedCount,
-          failed: current.failed + failedCount,
+          processed: current.processed + result.missingIcons.length,
+          failed: current.failed + result.missingIcons.length,
         }))
       }
 
@@ -321,22 +404,22 @@ export function AiGroupingPanel() {
 
     setStatus("completed")
     destroySession()
-  }, [assignIcons, destroySession])
+  }, [applyClassifications, destroySession])
 
   const beginRun = useCallback(async () => {
     if (runningRef.current) {
       return
     }
 
-    const factory = getLanguageModelFactory()
-    if (!factory) {
-      setStatus("unavailable")
-      return
-    }
-
     const queue = remainingIcons
     if (queue.length === 0) {
-      setProgress({ total: 0, processed: 0, assigned: 0, failed: 0 })
+      setProgress({
+        total: 0,
+        processed: 0,
+        assignedByRules: 0,
+        assignedByAi: 0,
+        failed: 0,
+      })
       setStatus("completed")
       return
     }
@@ -347,11 +430,41 @@ export function AiGroupingPanel() {
     setErrorMessage("")
     setCurrentResult(null)
     setDownloadProgress(0)
-    setProgress({ total: queue.length, processed: 0, assigned: 0, failed: 0 })
-    queueRef.current = queue
-    cursorRef.current = 0
+    setProgress({
+      total: queue.length,
+      processed: 0,
+      assignedByRules: 0,
+      assignedByAi: 0,
+      failed: 0,
+    })
+
+    const controller = new AbortController()
+    abortRef.current = controller
 
     try {
+      const groups =
+        data.groups.length > 0
+          ? data.groups
+          : ensureGroups([...DEFAULT_AI_GROUPS])
+      groupsRef.current = groups
+
+      setStatus("rules")
+      const ruleResult = classifyIconsByRules(queue, groups)
+      await applyClassifications(ruleResult.classifications, controller.signal)
+
+      queueRef.current = ruleResult.unresolvedIcons
+      cursorRef.current = 0
+      if (queueRef.current.length === 0) {
+        setStatus("completed")
+        return
+      }
+
+      const factory = getLanguageModelFactory()
+      if (!factory) {
+        setStatus("unavailable")
+        return
+      }
+
       setStatus("checking")
       const availability = await factory.availability(MODEL_CAPABILITIES)
       if (availability === "unavailable") {
@@ -359,20 +472,11 @@ export function AiGroupingPanel() {
         return
       }
 
-      const groups =
-        data.groups.length > 0
-          ? data.groups
-          : ensureGroups([...DEFAULT_AI_GROUPS])
-      groupsRef.current = groups
-
-      const controller = new AbortController()
-      abortRef.current = controller
       setStatus(
         availability === "downloadable" || availability === "downloading"
           ? "downloading"
           : "preparing"
       )
-
       sessionRef.current = await factory.create({
         ...MODEL_CAPABILITIES,
         signal: controller.signal,
@@ -390,9 +494,9 @@ export function AiGroupingPanel() {
       })
 
       setStatus("running")
-      await runQueue()
+      await runAiQueue()
     } catch (error) {
-      if (isAbortError(error) || abortRef.current?.signal.aborted) {
+      if (isAbortError(error) || controller.signal.aborted) {
         setStatus(stopRequestedRef.current ? "stopped" : "paused")
       } else {
         setErrorMessage(error instanceof Error ? error.message : String(error))
@@ -403,7 +507,14 @@ export function AiGroupingPanel() {
       abortRef.current = null
       runningRef.current = false
     }
-  }, [data.groups, destroySession, ensureGroups, remainingIcons, runQueue])
+  }, [
+    applyClassifications,
+    data.groups,
+    destroySession,
+    ensureGroups,
+    remainingIcons,
+    runAiQueue,
+  ])
 
   const resumeRun = useCallback(async () => {
     if (runningRef.current || !sessionRef.current) {
@@ -418,7 +529,7 @@ export function AiGroupingPanel() {
     setStatus("running")
 
     try {
-      await runQueue()
+      await runAiQueue()
     } catch (error) {
       if (isAbortError(error) || controller.signal.aborted) {
         setStatus(stopRequestedRef.current ? "stopped" : "paused")
@@ -431,7 +542,7 @@ export function AiGroupingPanel() {
       abortRef.current = null
       runningRef.current = false
     }
-  }, [destroySession, runQueue])
+  }, [destroySession, runAiQueue])
 
   function pauseRun() {
     pauseRequestedRef.current = true
@@ -455,6 +566,7 @@ export function AiGroupingPanel() {
   )
 
   const isBusy =
+    status === "rules" ||
     status === "checking" ||
     status === "downloading" ||
     status === "preparing" ||
@@ -492,7 +604,10 @@ export function AiGroupingPanel() {
             ) : (
               <Sparkles />
             )}
-            {status === "completed" || status === "stopped" || status === "error"
+            {status === "completed" ||
+            status === "stopped" ||
+            status === "error" ||
+            status === "unavailable"
               ? copy.retry
               : copy.start}
           </Button>
@@ -529,14 +644,18 @@ export function AiGroupingPanel() {
           </div>
 
           {progress.total > 0 && (
-            <div className="grid grid-cols-3 gap-2 text-center text-sm">
+            <div className="grid grid-cols-2 gap-2 text-center text-sm sm:grid-cols-4">
               <div className="rounded-lg border p-3">
                 <div className="text-lg font-semibold">
-                  {progress.assigned.toLocaleString(locale)}
+                  {progress.assignedByRules.toLocaleString(locale)}
                 </div>
-                <div className="text-xs text-muted-foreground">
-                  {copy.assigned}
+                <div className="text-xs text-muted-foreground">{copy.rules}</div>
+              </div>
+              <div className="rounded-lg border p-3">
+                <div className="text-lg font-semibold">
+                  {progress.assignedByAi.toLocaleString(locale)}
                 </div>
+                <div className="text-xs text-muted-foreground">{copy.ai}</div>
               </div>
               <div className="rounded-lg border p-3">
                 <div className="text-lg font-semibold">
@@ -573,12 +692,9 @@ export function AiGroupingPanel() {
                   {currentResult.name}
                 </div>
                 <div className="text-sm">{currentGroupName}</div>
-                <div className="truncate text-xs text-muted-foreground">
-                  {currentResult.keywords.join(", ")}
-                </div>
               </div>
               <Badge className="ml-auto shrink-0">
-                {copy.confidence[currentResult.confidence]}
+                {copy.source[currentResult.source]}
               </Badge>
             </div>
           )}
@@ -602,6 +718,17 @@ export function AiGroupingPanel() {
                 <Pause />
                 {copy.pause}
               </Button>
+              <Button variant="destructive" onClick={stopRun}>
+                <Square />
+                {copy.stop}
+              </Button>
+            </div>
+          )}
+          {(status === "rules" ||
+            status === "checking" ||
+            status === "downloading" ||
+            status === "preparing") && (
+            <div className="flex justify-end">
               <Button variant="destructive" onClick={stopRun}>
                 <Square />
                 {copy.stop}
