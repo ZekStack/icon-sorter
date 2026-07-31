@@ -17,6 +17,7 @@ import {
   normalizeColor,
   normalizeData,
   normalizeKeywords,
+  type IconGroup,
   type IconKeywords,
   type IconReference,
   type IconSorterData,
@@ -26,6 +27,7 @@ import {
 export {
   DEFAULT_ICON_COLOR,
   type DiscardedIcon,
+  type IconGroup,
   type IconKeywords,
   type IconReference,
   type IconSorterData,
@@ -46,9 +48,11 @@ type AssignIconInput = Omit<SavedIcon, "savedAt">
 type IconSorterContextValue = {
   data: IconSorterData
   addGroup: (name: string) => string | null
+  ensureGroups: (names: string[]) => IconGroup[]
   renameGroup: (groupId: string, name: string) => void
   removeGroup: (groupId: string) => void
   assignIcon: (icon: AssignIconInput) => void
+  assignIcons: (icons: AssignIconInput[]) => void
   moveIcon: (icon: IconReference, groupId: string) => void
   updateIconKeywords: (icon: IconReference, keywords: IconKeywords) => void
   removeIcon: (icon: IconReference) => void
@@ -119,6 +123,53 @@ export function IconSorterProvider({ children }: { children: ReactNode }) {
     [data.groups]
   )
 
+  const ensureGroups = useCallback(
+    (names: string[]) => {
+      const existingByName = new Map(
+        data.groups.map((group) => [group.name.toLowerCase(), group] as const)
+      )
+      const createdAt = new Date().toISOString()
+      const ensured = [...data.groups]
+
+      for (const candidate of names) {
+        const name = normalizeName(candidate)
+        const normalizedKey = name.toLowerCase()
+        if (!name || existingByName.has(normalizedKey)) {
+          continue
+        }
+
+        const group: IconGroup = {
+          id: createId(),
+          name,
+          createdAt,
+        }
+        existingByName.set(normalizedKey, group)
+        ensured.push(group)
+      }
+
+      if (ensured.length !== data.groups.length) {
+        const ensuredByName = new Map(
+          ensured.map((group) => [group.name.toLowerCase(), group] as const)
+        )
+        setData((current) => {
+          const currentNames = new Set(
+            current.groups.map((group) => group.name.toLowerCase())
+          )
+          const missing = [...ensuredByName.values()].filter(
+            (group) => !currentNames.has(group.name.toLowerCase())
+          )
+
+          return missing.length > 0
+            ? { ...current, groups: [...current.groups, ...missing] }
+            : current
+        })
+      }
+
+      return ensured
+    },
+    [data.groups]
+  )
+
   const renameGroup = useCallback((groupId: string, name: string) => {
     const normalizedName = normalizeName(name)
     if (!normalizedName) {
@@ -150,36 +201,52 @@ export function IconSorterProvider({ children }: { children: ReactNode }) {
     })
   }, [])
 
-  const assignIcon = useCallback((icon: AssignIconInput) => {
+  const assignIcons = useCallback((icons: AssignIconInput[]) => {
+    if (icons.length === 0) {
+      return
+    }
+
     setData((current) => {
-      const targetId = iconId(icon)
-      if (
-        current.reviewedIcons.some(
-          (reviewedIcon) => iconId(reviewedIcon) === targetId
-        ) ||
-        !current.groups.some((group) => group.id === icon.groupId)
-      ) {
-        return current
+      const groupIds = new Set(current.groups.map((group) => group.id))
+      const reviewedIds = new Set(current.reviewedIcons.map(iconId))
+      const savedIcons = [...current.icons]
+      const reviewedIcons = [...current.reviewedIcons]
+      const savedAt = new Date().toISOString()
+      let changed = false
+
+      for (const icon of icons) {
+        const targetId = iconId(icon)
+        if (reviewedIds.has(targetId) || !groupIds.has(icon.groupId)) {
+          continue
+        }
+
+        savedIcons.push({
+          ...icon,
+          color: normalizeColor(icon.color),
+          keywords: normalizeKeywords(icon.keywords),
+          savedAt,
+        })
+        reviewedIcons.push({ type: icon.type, name: icon.name })
+        reviewedIds.add(targetId)
+        changed = true
       }
 
-      return {
-        ...current,
-        icons: [
-          ...current.icons,
-          {
-            ...icon,
-            color: normalizeColor(icon.color),
-            keywords: normalizeKeywords(icon.keywords),
-            savedAt: new Date().toISOString(),
-          },
-        ],
-        reviewedIcons: [
-          ...current.reviewedIcons,
-          { type: icon.type, name: icon.name },
-        ],
-      }
+      return changed
+        ? {
+            ...current,
+            icons: savedIcons,
+            reviewedIcons,
+          }
+        : current
     })
   }, [])
+
+  const assignIcon = useCallback(
+    (icon: AssignIconInput) => {
+      assignIcons([icon])
+    },
+    [assignIcons]
+  )
 
   const moveIcon = useCallback((icon: IconReference, groupId: string) => {
     setData((current) => {
@@ -330,9 +397,11 @@ export function IconSorterProvider({ children }: { children: ReactNode }) {
     () => ({
       data,
       addGroup,
+      ensureGroups,
       renameGroup,
       removeGroup,
       assignIcon,
+      assignIcons,
       moveIcon,
       updateIconKeywords,
       removeIcon,
@@ -344,9 +413,11 @@ export function IconSorterProvider({ children }: { children: ReactNode }) {
     [
       data,
       addGroup,
+      ensureGroups,
       renameGroup,
       removeGroup,
       assignIcon,
+      assignIcons,
       moveIcon,
       updateIconKeywords,
       removeIcon,
