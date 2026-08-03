@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest"
 
 import {
+  AI_KEYWORD_BATCH_SIZE,
   createAiKeywordPrompt,
   createAiKeywordResponseSchema,
   parseAiKeywordResponse,
 } from "@/features/ai-keywords/ai-keywords"
+import { runBatchQueue } from "@/features/ai-grouping/ai-grouping-runtime"
 import type { IconGroup } from "@/lib/icon-sorter-data"
 
 const groups: IconGroup[] = [
@@ -66,5 +68,35 @@ describe("AI keywords", () => {
       },
     ])
     expect(result.missingIcons).toEqual([icons[1]])
+  })
+
+  it("processes more than 128 keyword targets in bounded batches", async () => {
+    const targets = Array.from({ length: 160 }, (_, index) => index)
+    const processed: number[] = []
+    const batchSizes: number[] = []
+
+    const result = await runBatchQueue({
+      items: targets,
+      startIndex: 0,
+      batchSize: AI_KEYWORD_BATCH_SIZE,
+      signal: new AbortController().signal,
+      timeoutMs: 1_000,
+      shouldPause: () => false,
+      processBatch: async (batch) => {
+        batchSizes.push(batch.length)
+        return [...batch]
+      },
+      onBatchResult: (batch) => {
+        processed.push(...batch)
+      },
+      onBatchError: () => {
+        throw new Error("unexpected keyword batch failure")
+      },
+      yieldControl: async () => undefined,
+    })
+
+    expect(result).toEqual({ cursor: 160, paused: false })
+    expect(processed).toEqual(targets)
+    expect(batchSizes).toEqual(Array.from({ length: 10 }, () => 16))
   })
 })

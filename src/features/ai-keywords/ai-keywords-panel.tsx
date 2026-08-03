@@ -7,7 +7,8 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
   AI_KEYWORD_BATCH_SIZE,
-  AI_KEYWORD_MIN_BATCH_SIZE,
+  AI_KEYWORD_LIVE_UPDATE_CHUNK_SIZE,
+  AI_KEYWORD_REQUEST_TIMEOUT_MS,
   createAiKeywordPrompt,
   createAiKeywordResponseSchema,
   createAiKeywordSystemPrompt,
@@ -15,6 +16,11 @@ import {
   type AiKeywordResult,
   type AiKeywordTarget,
 } from "@/features/ai-keywords/ai-keywords"
+import {
+  isAbortError,
+  runBatchQueue,
+  yieldToMainThread,
+} from "@/features/ai-grouping/ai-grouping-runtime"
 import type { IconGroup, IconReference } from "@/lib/icon-sorter-data"
 import { DEFAULT_ICON_COLOR, useIconSorter } from "@/lib/icon-sorter-store"
 
@@ -22,8 +28,6 @@ const MODEL_CAPABILITIES = {
   expectedInputs: [{ type: "text", languages: ["en"] }],
   expectedOutputs: [{ type: "text", languages: ["en"] }],
 } as const
-
-const LIVE_UPDATE_CHUNK_SIZE = 64
 
 type KeywordStatus =
   | "idle"
@@ -157,19 +161,9 @@ function getLanguageModelFactory() {
   ).LanguageModel
 }
 
-function isAbortError(error: unknown) {
-  return error instanceof DOMException && error.name === "AbortError"
-}
-
-function nextPaint() {
-  return new Promise<void>((resolve) =>
-    window.requestAnimationFrame(() => resolve())
-  )
-}
-
 async function generateKeywordBatch(
   session: LanguageModelSession,
-  icons: AiKeywordTarget[],
+  icons: readonly AiKeywordTarget[],
   groups: IconGroup[],
   signal: AbortSignal
 ): Promise<BatchResult> {
@@ -177,65 +171,16 @@ async function generateKeywordBatch(
 
   try {
     clone = await session.clone({ signal })
-    const response = await clone.prompt(createAiKeywordPrompt(icons, groups), {
-      signal,
-      responseConstraint: createAiKeywordResponseSchema(icons),
-    })
-    clone.destroy()
-    clone = null
-
-    const parsed = parseAiKeywordResponse(response, icons)
-    if (
-      parsed.missingIcons.length === 0 ||
-      icons.length <= AI_KEYWORD_MIN_BATCH_SIZE
-    ) {
-      return parsed
-    }
-
-    const missingIds = new Set(
-      parsed.missingIcons.map((icon) => `${icon.type}:${icon.name}`)
-    )
-    const missingTargets = icons.filter((icon) =>
-      missingIds.has(`${icon.type}:${icon.name}`)
-    )
-    const retry = await generateKeywordBatch(
-      session,
-      missingTargets,
-      groups,
-      signal
+    const inputIcons = [...icons]
+    const response = await clone.prompt(
+      createAiKeywordPrompt(inputIcons, groups),
+      {
+        signal,
+        responseConstraint: createAiKeywordResponseSchema(inputIcons),
+      }
     )
 
-    return {
-      results: [...parsed.results, ...retry.results],
-      missingIcons: retry.missingIcons,
-    }
-  } catch (error) {
-    if (isAbortError(error) || signal.aborted) {
-      throw error
-    }
-
-    if (icons.length <= AI_KEYWORD_MIN_BATCH_SIZE) {
-      return { results: [], missingIcons: icons }
-    }
-
-    const midpoint = Math.ceil(icons.length / 2)
-    const left = await generateKeywordBatch(
-      session,
-      icons.slice(0, midpoint),
-      groups,
-      signal
-    )
-    const right = await generateKeywordBatch(
-      session,
-      icons.slice(midpoint),
-      groups,
-      signal
-    )
-
-    return {
-      results: [...left.results, ...right.results],
-      missingIcons: [...left.missingIcons, ...right.missingIcons],
-    }
+    return parseAiKeywordResponse(response, inputIcons)
   } finally {
     clone?.destroy()
   }
@@ -292,13 +237,16 @@ export function AiKeywordsPanel() {
       for (
         let index = 0;
         index < results.length;
-        index += LIVE_UPDATE_CHUNK_SIZE
+        index += AI_KEYWORD_LIVE_UPDATE_CHUNK_SIZE
       ) {
         if (signal.aborted) {
           throw new DOMException("Keyword generation aborted", "AbortError")
         }
 
-        const chunk = results.slice(index, index + LIVE_UPDATE_CHUNK_SIZE)
+        const chunk = results.slice(
+          index,
+          index + AI_KEYWORD_LIVE_UPDATE_CHUNK_SIZE
+        )
         updateIconsKeywords(chunk)
         setCurrentResult(chunk.at(-1) ?? null)
         setProgress((current) => ({
@@ -306,7 +254,7 @@ export function AiKeywordsPanel() {
           processed: current.processed + chunk.length,
           updated: current.updated + chunk.length,
         }))
-        await nextPaint()
+        await yieldToMainThread()
       }
     },
     [updateIconsKeywords]
@@ -320,30 +268,41 @@ export function AiKeywordsPanel() {
       throw new Error("missing-ai-keyword-session")
     }
 
-    while (cursorRef.current < queueRef.current.length) {
-      if (pauseRequestedRef.current) {
-        setStatus("paused")
-        return
-      }
+    const result = await runBatchQueue({
+      items: queueRef.current,
+      startIndex: cursorRef.current,
+      batchSize: AI_KEYWORD_BATCH_SIZE,
+      signal,
+      timeoutMs: AI_KEYWORD_REQUEST_TIMEOUT_MS,
+      shouldPause: () => pauseRequestedRef.current,
+      processBatch: (batch, batchSignal) =>
+        generateKeywordBatch(session, batch, groups, batchSignal),
+      onBatchResult: async (batchResult) => {
+        if (batchResult.results.length > 0) {
+          await applyResults(batchResult.results, signal)
+        }
 
-      const batch = queueRef.current.slice(
-        cursorRef.current,
-        cursorRef.current + AI_KEYWORD_BATCH_SIZE
-      )
-      const result = await generateKeywordBatch(session, batch, groups, signal)
-
-      if (result.results.length > 0) {
-        await applyResults(result.results, signal)
-      }
-      if (result.missingIcons.length > 0) {
+        if (batchResult.missingIcons.length > 0) {
+          setProgress((current) => ({
+            ...current,
+            processed: current.processed + batchResult.missingIcons.length,
+            failed: current.failed + batchResult.missingIcons.length,
+          }))
+        }
+      },
+      onBatchError: (_error, batch) => {
         setProgress((current) => ({
           ...current,
-          processed: current.processed + result.missingIcons.length,
-          failed: current.failed + result.missingIcons.length,
+          processed: current.processed + batch.length,
+          failed: current.failed + batch.length,
         }))
-      }
+      },
+    })
 
-      cursorRef.current += batch.length
+    cursorRef.current = result.cursor
+    if (result.paused) {
+      setStatus("paused")
+      return
     }
 
     setStatus("completed")
