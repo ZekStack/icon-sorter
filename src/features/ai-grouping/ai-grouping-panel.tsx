@@ -6,8 +6,6 @@ import { IconPreview } from "@/components/icon-preview"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
-  AI_GROUPING_BATCH_SIZE,
-  AI_GROUPING_MIN_BATCH_SIZE,
   DEFAULT_AI_GROUPS,
   classifyIconsByRules,
   createAiGroupingPrompt,
@@ -17,6 +15,14 @@ import {
   type AiGroupingSource,
   type AiIconClassification,
 } from "@/features/ai-grouping/ai-grouping"
+import {
+  AI_GROUPING_BATCH_SIZE,
+  AI_GROUPING_LIVE_UPDATE_CHUNK_SIZE,
+  AI_GROUPING_REQUEST_TIMEOUT_MS,
+  isAbortError,
+  runBatchQueue,
+  yieldToMainThread,
+} from "@/features/ai-grouping/ai-grouping-runtime"
 import { iconCatalog } from "@/lib/icon-catalog"
 import {
   iconId,
@@ -32,8 +38,6 @@ const MODEL_CAPABILITIES = {
   expectedInputs: [{ type: "text", languages: ["en"] }],
   expectedOutputs: [{ type: "text", languages: ["en"] }],
 } as const
-
-const LIVE_UPDATE_CHUNK_SIZE = 64
 
 type AiGroupingStatus =
   | "idle"
@@ -203,17 +207,9 @@ function getLanguageModelFactory() {
   ).LanguageModel
 }
 
-function isAbortError(error: unknown) {
-  return error instanceof DOMException && error.name === "AbortError"
-}
-
-function nextPaint() {
-  return new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()))
-}
-
 async function classifyAiBatch(
   session: LanguageModelSession,
-  icons: IconReference[],
+  icons: readonly IconReference[],
   groups: IconGroup[],
   signal: AbortSignal
 ): Promise<BatchResult> {
@@ -221,57 +217,12 @@ async function classifyAiBatch(
 
   try {
     clone = await session.clone({ signal })
-    const response = await clone.prompt(createAiGroupingPrompt(icons), {
+    const inputIcons = [...icons]
+    const response = await clone.prompt(createAiGroupingPrompt(inputIcons), {
       signal,
-      responseConstraint: createAiGroupingResponseSchema(icons, groups),
+      responseConstraint: createAiGroupingResponseSchema(inputIcons, groups),
     })
-    clone.destroy()
-    clone = null
-    const parsed = parseAiGroupingResponse(response, icons, groups)
-
-    if (
-      parsed.missingIcons.length === 0 ||
-      icons.length <= AI_GROUPING_MIN_BATCH_SIZE
-    ) {
-      return parsed
-    }
-
-    const retry = await classifyAiBatch(
-      session,
-      parsed.missingIcons,
-      groups,
-      signal
-    )
-    return {
-      classifications: [...parsed.classifications, ...retry.classifications],
-      missingIcons: retry.missingIcons,
-    }
-  } catch (error) {
-    if (isAbortError(error) || signal.aborted) {
-      throw error
-    }
-
-    if (icons.length <= AI_GROUPING_MIN_BATCH_SIZE) {
-      return { classifications: [], missingIcons: icons }
-    }
-
-    const midpoint = Math.ceil(icons.length / 2)
-    const left = await classifyAiBatch(
-      session,
-      icons.slice(0, midpoint),
-      groups,
-      signal
-    )
-    const right = await classifyAiBatch(
-      session,
-      icons.slice(midpoint),
-      groups,
-      signal
-    )
-    return {
-      classifications: [...left.classifications, ...right.classifications],
-      missingIcons: [...left.missingIcons, ...right.missingIcons],
-    }
+    return parseAiGroupingResponse(response, inputIcons, groups)
   } finally {
     clone?.destroy()
   }
@@ -330,7 +281,7 @@ export function AiGroupingPanel() {
       for (
         let index = 0;
         index < classifications.length;
-        index += LIVE_UPDATE_CHUNK_SIZE
+        index += AI_GROUPING_LIVE_UPDATE_CHUNK_SIZE
       ) {
         if (signal.aborted) {
           throw new DOMException("Grouping aborted", "AbortError")
@@ -338,7 +289,7 @@ export function AiGroupingPanel() {
 
         const chunk = classifications.slice(
           index,
-          index + LIVE_UPDATE_CHUNK_SIZE
+          index + AI_GROUPING_LIVE_UPDATE_CHUNK_SIZE
         )
         assignIcons(
           chunk.map((classification) => ({
@@ -361,7 +312,7 @@ export function AiGroupingPanel() {
           assignedByRules: current.assignedByRules + ruleCount,
           assignedByAi: current.assignedByAi + aiCount,
         }))
-        await nextPaint()
+        await yieldToMainThread()
       }
     },
     [assignIcons]
@@ -375,31 +326,41 @@ export function AiGroupingPanel() {
       throw new Error("missing-ai-session")
     }
 
-    while (cursorRef.current < queueRef.current.length) {
-      if (pauseRequestedRef.current) {
-        setStatus("paused")
-        return
-      }
+    const result = await runBatchQueue({
+      items: queueRef.current,
+      startIndex: cursorRef.current,
+      batchSize: AI_GROUPING_BATCH_SIZE,
+      signal,
+      timeoutMs: AI_GROUPING_REQUEST_TIMEOUT_MS,
+      shouldPause: () => pauseRequestedRef.current,
+      processBatch: (batch, batchSignal) =>
+        classifyAiBatch(session, batch, groups, batchSignal),
+      onBatchResult: async (batchResult) => {
+        if (batchResult.classifications.length > 0) {
+          await applyClassifications(batchResult.classifications, signal)
+        }
 
-      const batch = queueRef.current.slice(
-        cursorRef.current,
-        cursorRef.current + AI_GROUPING_BATCH_SIZE
-      )
-      const result = await classifyAiBatch(session, batch, groups, signal)
-
-      if (result.classifications.length > 0) {
-        await applyClassifications(result.classifications, signal)
-      }
-
-      if (result.missingIcons.length > 0) {
+        if (batchResult.missingIcons.length > 0) {
+          setProgress((current) => ({
+            ...current,
+            processed: current.processed + batchResult.missingIcons.length,
+            failed: current.failed + batchResult.missingIcons.length,
+          }))
+        }
+      },
+      onBatchError: (_error, batch) => {
         setProgress((current) => ({
           ...current,
-          processed: current.processed + result.missingIcons.length,
-          failed: current.failed + result.missingIcons.length,
+          processed: current.processed + batch.length,
+          failed: current.failed + batch.length,
         }))
-      }
+      },
+    })
 
-      cursorRef.current += batch.length
+    cursorRef.current = result.cursor
+    if (result.paused) {
+      setStatus("paused")
+      return
     }
 
     setStatus("completed")
