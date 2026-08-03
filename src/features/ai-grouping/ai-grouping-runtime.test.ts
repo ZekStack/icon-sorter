@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 
 import {
   AiGroupingTimeoutError,
@@ -7,6 +7,10 @@ import {
 } from "@/features/ai-grouping/ai-grouping-runtime"
 
 describe("AI grouping runtime", () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
   it("continues through more than 128 items", async () => {
     const items = Array.from({ length: 160 }, (_, index) => index)
     const processed: number[] = []
@@ -58,7 +62,6 @@ describe("AI grouping runtime", () => {
     await vi.advanceTimersByTimeAsync(250)
 
     await expect(operation).rejects.toBeInstanceOf(AiGroupingTimeoutError)
-    vi.useRealTimers()
   })
 
   it("normalizes abort rejection caused by a timeout", async () => {
@@ -80,7 +83,6 @@ describe("AI grouping runtime", () => {
     await vi.advanceTimersByTimeAsync(250)
 
     await expect(operation).rejects.toBeInstanceOf(AiGroupingTimeoutError)
-    vi.useRealTimers()
   })
 
   it("marks a timed-out batch failed and continues", async () => {
@@ -114,12 +116,11 @@ describe("AI grouping runtime", () => {
       yieldControl: async () => undefined,
     })
 
-    await vi.advanceTimersByTimeAsync(100)
+    await vi.runAllTimersAsync()
     const result = await queue
 
     expect(result).toEqual({ cursor: 48, paused: false })
     expect(completed).toEqual([...items.slice(0, 16), ...items.slice(32)])
     expect(failed).toEqual(items.slice(16, 32))
-    vi.useRealTimers()
   })
 })
