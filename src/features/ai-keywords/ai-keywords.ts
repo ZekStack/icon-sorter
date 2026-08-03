@@ -5,8 +5,9 @@ import {
   type IconReference,
 } from "@/lib/icon-sorter-data"
 
-export const AI_KEYWORD_BATCH_SIZE = 64
-export const AI_KEYWORD_MIN_BATCH_SIZE = 8
+export const AI_KEYWORD_BATCH_SIZE = 16
+export const AI_KEYWORD_REQUEST_TIMEOUT_MS = 45_000
+export const AI_KEYWORD_LIVE_UPDATE_CHUNK_SIZE = 16
 
 export type AiKeywordTarget = IconReference & {
   groupId: string
