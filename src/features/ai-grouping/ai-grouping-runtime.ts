@@ -1,6 +1,6 @@
 export const AI_GROUPING_BATCH_SIZE = 16
 export const AI_GROUPING_REQUEST_TIMEOUT_MS = 45_000
-export const AI_GROUPING_LIVE_UPDATE_CHUNK_SIZE = 16
+export const AI_GROUPING_LIVE_UPDATE_CHUNK_SIZE = 64
 
 export class AiGroupingTimeoutError extends Error {
   constructor() {
