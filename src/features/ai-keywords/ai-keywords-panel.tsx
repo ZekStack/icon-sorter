@@ -6,6 +6,7 @@ import { IconPreview } from "@/components/icon-preview"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { createAiKeywordModels } from "@/features/ai-keywords/ai-keyword-model-runtime"
 import {
   AI_KEYWORD_BATCH_SIZE,
   AI_KEYWORD_LANGUAGES,
@@ -610,77 +611,79 @@ export function AiKeywordsPanel() {
     translationCacheRef.current = new Map()
 
     const controller = new AbortController()
+    const creationController = new AbortController()
+    const abortCreation = () =>
+      creationController.abort(controller.signal.reason)
+    controller.signal.addEventListener("abort", abortCreation, { once: true })
     abortRef.current = controller
 
     try {
-      setStatus("checking")
-      const modelAvailability = await modelFactory.availability(
-        MODEL_CAPABILITIES
-      )
-      if (modelAvailability === "unavailable") {
-        setStatus("unavailable")
-        return
-      }
+      setStatus("preparing")
+      setDownloadLanguage("AI models")
 
-      if (translatorFactory) {
-        for (const setting of translatedLanguages) {
-          const availability = await translatorFactory.availability({
-            sourceLanguage: "en",
-            targetLanguage: setting.code,
-          })
-          if (availability === "unavailable") {
-            setStatus("unavailable")
-            return
-          }
+      const translatorDefinitions = translatedLanguages.map((setting) => {
+        const definition = AI_KEYWORD_LANGUAGES.find(
+          (candidate) => candidate.code === setting.code
+        )
+        return {
+          code: setting.code,
+          label: definition?.nativeLabel ?? setting.code,
         }
-      }
-
-      setStatus(
-        modelAvailability === "downloadable" ||
-          modelAvailability === "downloading"
-          ? "downloading"
-          : "preparing"
-      )
-      setDownloadLanguage("English keyword model")
-      sessionRef.current = await modelFactory.create({
-        ...MODEL_CAPABILITIES,
-        signal: controller.signal,
-        initialPrompts: [
-          {
-            role: "system",
-            content: createAiKeywordSystemPrompt(candidateCountRef.current),
-          },
-        ],
-        monitor(monitor) {
-          monitor.addEventListener("downloadprogress", (event) => {
-            setDownloadProgress(Math.round(event.loaded * 100))
-          })
-        },
       })
 
-      if (translatorFactory) {
-        for (const setting of translatedLanguages) {
-          const definition = AI_KEYWORD_LANGUAGES.find(
-            (candidate) => candidate.code === setting.code
-          )
-          setStatus("preparing")
-          setDownloadProgress(0)
-          setDownloadLanguage(definition?.nativeLabel ?? setting.code)
-          const translator = await translatorFactory.create({
-            sourceLanguage: "en",
-            targetLanguage: setting.code,
-            signal: controller.signal,
+      const models = await createAiKeywordModels({
+        translators: translatorDefinitions,
+        createSession: () =>
+          modelFactory.create({
+            ...MODEL_CAPABILITIES,
+            signal: creationController.signal,
+            initialPrompts: [
+              {
+                role: "system",
+                content: createAiKeywordSystemPrompt(candidateCountRef.current),
+              },
+            ],
             monitor(monitor) {
               monitor.addEventListener("downloadprogress", (event) => {
                 setStatus("downloading")
+                setDownloadLanguage("English keyword model")
+                setDownloadProgress(Math.round(event.loaded * 100))
+              })
+            },
+          }),
+        createTranslator: (languageCode) => {
+          if (!translatorFactory) {
+            throw new Error("translator-api-unavailable")
+          }
+
+          const definition = AI_KEYWORD_LANGUAGES.find(
+            (candidate) => candidate.code === languageCode
+          )
+          const label = definition?.nativeLabel ?? languageCode
+          return translatorFactory.create({
+            sourceLanguage: "en",
+            targetLanguage: languageCode,
+            signal: creationController.signal,
+            monitor(monitor) {
+              monitor.addEventListener("downloadprogress", (event) => {
+                setStatus("downloading")
+                setDownloadLanguage(label)
                 setDownloadProgress(Math.round(event.loaded * 100))
               })
             },
           })
-          translatorsRef.current.set(setting.code, translator)
-        }
-      }
+        },
+        destroySession: (session) => session.destroy(),
+        destroyTranslator: (translator) => translator.destroy(),
+        onFailure: (error) => {
+          if (!creationController.signal.aborted) {
+            creationController.abort(error)
+          }
+        },
+      })
 
+      sessionRef.current = models.session
+      translatorsRef.current = models.translators
       setDownloadLanguage("")
       setStatus("running")
       await runQueue()
@@ -693,6 +696,7 @@ export function AiKeywordsPanel() {
       }
       destroyModels()
     } finally {
+      controller.signal.removeEventListener("abort", abortCreation)
       abortRef.current = null
       runningRef.current = false
     }
