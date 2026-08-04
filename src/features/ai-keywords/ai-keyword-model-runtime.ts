@@ -127,13 +127,16 @@ export async function createAiKeywordModels<TSession, TTranslator>({
     promise: startTranslator(definition),
   }))
 
-  const settled = await Promise.allSettled([
-    sessionPromise,
-    ...translatorPromises.map(({ promise }) => promise),
+  const [sessionResults, translatorResults] = await Promise.all([
+    Promise.allSettled([sessionPromise]),
+    Promise.allSettled(
+      translatorPromises.map(({ promise }) => promise)
+    ),
   ])
-  const sessionResult = settled[0]
-  const translatorResults = settled.slice(1)
-  const failed = settled.some((result) => result.status === "rejected")
+  const sessionResult = sessionResults[0]
+  const failed =
+    sessionResult?.status === "rejected" ||
+    translatorResults.some((result) => result.status === "rejected")
 
   if (failed || !sessionResult || sessionResult.status !== "fulfilled") {
     if (sessionResult?.status === "fulfilled") {
@@ -146,8 +149,8 @@ export async function createAiKeywordModels<TSession, TTranslator>({
       }
     }
 
-    const fallbackError = settled.find(
-      (result): result is PromiseRejectedResult => result.status === "rejected"
+    const fallbackError = [sessionResult, ...translatorResults].find(
+      (result): result is PromiseRejectedResult => result?.status === "rejected"
     )?.reason
     throw primaryError ?? fallbackError ?? new Error("ai-model-creation-failed")
   }
