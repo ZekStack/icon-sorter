@@ -1,171 +1,135 @@
-export type AiKeywordTranslatorDefinition = {
-  code: string
-  label: string
+export const AI_KEYWORD_PROMPT_MODEL_TIMEOUT_MS = 20 * 60_000
+export const AI_KEYWORD_TRANSLATOR_MODEL_TIMEOUT_MS = 5 * 60_000
+
+export class AiKeywordModelTimeoutError extends Error {
+  readonly label: string
+
+  constructor(label: string) {
+    super(`${label}: model preparation timed out`)
+    this.name = "AiKeywordModelTimeoutError"
+    this.label = label
+  }
 }
 
 export class AiKeywordModelCreationError extends Error {
-  readonly model: "prompt" | "translator"
-  readonly languageCode?: string
+  readonly label: string
+  readonly cause: unknown
 
-  constructor(options: {
-    model: "prompt" | "translator"
-    languageCode?: string
-    label: string
-    cause: unknown
-  }) {
-    const detail =
-      options.cause instanceof Error
-        ? options.cause.message
-        : String(options.cause)
-
-    super(`${options.label}: ${detail}`)
+  constructor(label: string, cause: unknown) {
+    const detail = cause instanceof Error ? cause.message : String(cause)
+    super(`${label}: ${detail}`)
     this.name = "AiKeywordModelCreationError"
-    this.model = options.model
-    this.languageCode = options.languageCode
+    this.label = label
+    this.cause = cause
   }
 }
 
-type CreateAiKeywordModelsOptions<TSession, TTranslator> = {
-  translators: readonly AiKeywordTranslatorDefinition[]
-  createSession: () => Promise<TSession>
-  createTranslator: (languageCode: string) => Promise<TTranslator>
-  destroySession: (session: TSession) => void
-  destroyTranslator: (translator: TTranslator) => void
-  onFailure?: (error: AiKeywordModelCreationError) => void
+type StartAiKeywordModelCreationOptions<T> = {
+  label: string
+  timeoutMs: number
+  parentSignal?: AbortSignal
+  create: (signal: AbortSignal) => Promise<T>
+  destroy?: (model: T) => void
 }
 
-export type CreatedAiKeywordModels<TSession, TTranslator> = {
-  session: TSession
-  translators: Map<string, TTranslator>
+function createAbortError() {
+  return new DOMException("Model preparation aborted", "AbortError")
 }
 
-function safelyDestroy<T>(value: T, destroy: (value: T) => void) {
+function safelyDestroy<T>(model: T, destroy?: (model: T) => void) {
+  if (!destroy) {
+    return
+  }
+
   try {
-    destroy(value)
+    destroy(model)
   } catch {
-    // Cleanup must not hide the model creation error.
+    // Cleanup errors must not hide the original preparation failure.
   }
 }
 
-export async function createAiKeywordModels<TSession, TTranslator>({
-  translators,
-  createSession,
-  createTranslator,
-  destroySession,
-  destroyTranslator,
-  onFailure,
-}: CreateAiKeywordModelsOptions<
-  TSession,
-  TTranslator
->): Promise<CreatedAiKeywordModels<TSession, TTranslator>> {
-  let primaryError: AiKeywordModelCreationError | undefined
-
-  const registerFailure = (error: AiKeywordModelCreationError) => {
-    if (!primaryError) {
-      primaryError = error
-      onFailure?.(error)
-    }
-    return error
+/**
+ * Starts exactly one browser AI model creation synchronously.
+ *
+ * Chrome may consume transient user activation when create() is called, so the
+ * caller must invoke this function directly from the trusted event handler and
+ * must use a separate trusted interaction for every model or translator.
+ */
+export function startAiKeywordModelCreation<T>({
+  label,
+  timeoutMs,
+  parentSignal,
+  create,
+  destroy,
+}: StartAiKeywordModelCreationOptions<T>): Promise<T> {
+  if (parentSignal?.aborted) {
+    return Promise.reject(createAbortError())
   }
 
-  const startSession = () => {
-    try {
-      return createSession().catch((cause) => {
-        throw registerFailure(
-          new AiKeywordModelCreationError({
-            model: "prompt",
-            label: "English keyword model",
-            cause,
-          })
-        )
-      })
-    } catch (cause) {
-      return Promise.reject(
-        registerFailure(
-          new AiKeywordModelCreationError({
-            model: "prompt",
-            label: "English keyword model",
-            cause,
-          })
-        )
-      )
-    }
+  const controller = new AbortController()
+  let settled = false
+  let timeoutId: ReturnType<typeof setTimeout> | undefined
+  let removeParentAbort: (() => void) | undefined
+
+  let creationPromise: Promise<T>
+  try {
+    // Intentionally executed before this function returns and before any await.
+    creationPromise = create(controller.signal)
+  } catch (cause) {
+    return Promise.reject(new AiKeywordModelCreationError(label, cause))
   }
 
-  const startTranslator = (definition: AiKeywordTranslatorDefinition) => {
-    try {
-      return createTranslator(definition.code).catch((cause) => {
-        throw registerFailure(
-          new AiKeywordModelCreationError({
-            model: "translator",
-            languageCode: definition.code,
-            label: `${definition.label} (${definition.code})`,
-            cause,
-          })
-        )
-      })
-    } catch (cause) {
-      return Promise.reject(
-        registerFailure(
-          new AiKeywordModelCreationError({
-            model: "translator",
-            languageCode: definition.code,
-            label: `${definition.label} (${definition.code})`,
-            cause,
-          })
-        )
-      )
-    }
-  }
-
-  // These calls intentionally run before the first await. Chrome requires
-  // create() to happen while the originating user activation is still active
-  // when a built-in model or language pack must be downloaded.
-  const sessionPromise = startSession()
-  const translatorPromises = translators.map((definition) => ({
-    definition,
-    promise: startTranslator(definition),
-  }))
-
-  const [sessionResults, translatorResults] = await Promise.all([
-    Promise.allSettled([sessionPromise]),
-    Promise.allSettled(
-      translatorPromises.map(({ promise }) => promise)
-    ),
-  ])
-  const sessionResult = sessionResults[0]
-  const failed =
-    sessionResult?.status === "rejected" ||
-    translatorResults.some((result) => result.status === "rejected")
-
-  if (failed || !sessionResult || sessionResult.status !== "fulfilled") {
-    if (sessionResult?.status === "fulfilled") {
-      safelyDestroy(sessionResult.value, destroySession)
-    }
-
-    for (const result of translatorResults) {
-      if (result?.status === "fulfilled") {
-        safelyDestroy(result.value, destroyTranslator)
+  return new Promise<T>((resolve, reject) => {
+    const finish = (callback: () => void) => {
+      if (settled) {
+        return false
       }
+
+      settled = true
+      if (timeoutId !== undefined) {
+        clearTimeout(timeoutId)
+      }
+      removeParentAbort?.()
+      callback()
+      return true
     }
 
-    const fallbackError = [sessionResult, ...translatorResults].find(
-      (result): result is PromiseRejectedResult => result?.status === "rejected"
-    )?.reason
-    throw primaryError ?? fallbackError ?? new Error("ai-model-creation-failed")
-  }
-
-  const createdTranslators = new Map<string, TTranslator>()
-  for (let index = 0; index < translatorPromises.length; index += 1) {
-    const definition = translatorPromises[index]?.definition
-    const result = translatorResults[index]
-    if (definition && result?.status === "fulfilled") {
-      createdTranslators.set(definition.code, result.value)
+    if (parentSignal) {
+      const handleParentAbort = () => {
+        controller.abort(parentSignal.reason)
+        finish(() => reject(createAbortError()))
+      }
+      parentSignal.addEventListener("abort", handleParentAbort, { once: true })
+      removeParentAbort = () =>
+        parentSignal.removeEventListener("abort", handleParentAbort)
     }
-  }
 
-  return {
-    session: sessionResult.value,
-    translators: createdTranslators,
-  }
+    timeoutId = setTimeout(() => {
+      const error = new AiKeywordModelTimeoutError(label)
+      controller.abort(error)
+      finish(() => reject(error))
+    }, timeoutMs)
+
+    creationPromise.then(
+      (model) => {
+        if (!finish(() => resolve(model))) {
+          safelyDestroy(model, destroy)
+        }
+      },
+      (cause) => {
+        finish(() => {
+          if (controller.signal.aborted) {
+            reject(
+              controller.signal.reason instanceof AiKeywordModelTimeoutError
+                ? controller.signal.reason
+                : createAbortError()
+            )
+            return
+          }
+
+          reject(new AiKeywordModelCreationError(label, cause))
+        })
+      }
+    )
+  })
 }
