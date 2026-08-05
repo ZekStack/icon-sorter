@@ -1,12 +1,26 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { KeyRound, LoaderCircle, Pause, Play, Square } from "lucide-react"
+import {
+  CheckCircle2,
+  CircleAlert,
+  Download,
+  KeyRound,
+  LoaderCircle,
+  Pause,
+  Play,
+  RotateCcw,
+  Square,
+} from "lucide-react"
 import { useTranslation } from "react-i18next"
 
 import { IconPreview } from "@/components/icon-preview"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { createAiKeywordModels } from "@/features/ai-keywords/ai-keyword-model-runtime"
+import {
+  AI_KEYWORD_PROMPT_MODEL_TIMEOUT_MS,
+  AI_KEYWORD_TRANSLATOR_MODEL_TIMEOUT_MS,
+  startAiKeywordModelCreation,
+} from "@/features/ai-keywords/ai-keyword-model-runtime"
 import {
   AI_KEYWORD_BATCH_SIZE,
   AI_KEYWORD_LANGUAGES,
@@ -46,6 +60,7 @@ import {
 } from "@/lib/icon-sorter-data"
 import { DEFAULT_ICON_COLOR, useIconSorter } from "@/lib/icon-sorter-store"
 
+const PROMPT_MODEL_KEY = "prompt"
 const MODEL_CAPABILITIES = {
   expectedInputs: [{ type: "text", languages: ["en"] }],
   expectedOutputs: [{ type: "text", languages: ["en"] }],
@@ -53,9 +68,6 @@ const MODEL_CAPABILITIES = {
 
 type KeywordStatus =
   | "idle"
-  | "checking"
-  | "downloading"
-  | "preparing"
   | "running"
   | "pausing"
   | "paused"
@@ -64,11 +76,18 @@ type KeywordStatus =
   | "unavailable"
   | "error"
 
-type BuiltInAvailability =
-  | "unavailable"
-  | "downloadable"
+type ModelPreparationStatus =
+  | "idle"
+  | "preparing"
   | "downloading"
-  | "available"
+  | "ready"
+  | "error"
+
+type ModelPreparationState = {
+  status: ModelPreparationStatus
+  progress: number
+  error: string
+}
 
 type DownloadMonitor = {
   addEventListener: (
@@ -90,9 +109,6 @@ type LanguageModelSession = {
 }
 
 type LanguageModelFactory = {
-  availability: (
-    options: typeof MODEL_CAPABILITIES
-  ) => Promise<BuiltInAvailability>
   create: (
     options: typeof MODEL_CAPABILITIES & {
       signal?: AbortSignal
@@ -111,10 +127,6 @@ type TranslatorSession = {
 }
 
 type TranslatorFactory = {
-  availability: (options: {
-    sourceLanguage: string
-    targetLanguage: string
-  }) => Promise<BuiltInAvailability>
   create: (options: {
     sourceLanguage: string
     targetLanguage: string
@@ -148,9 +160,18 @@ const COPY = {
     allScope: "All saved icons (merge existing)",
     languages: "Languages and keyword counts",
     keywordCount: "Keywords",
+    models: "Prepare browser AI models",
+    modelDescription:
+      "Chrome requires a separate real click for each downloadable model. Prepare every row, then start generation.",
+    promptModel: "English keyword model",
+    promptModelDetail: "Generates the semantic source keywords",
+    translatorDetail: "English translation model",
+    prepare: "Prepare",
+    retryModel: "Retry",
+    resetModels: "Reset models",
+    prepareHint: "Prepare every required model before starting.",
     startMissing: "Generate missing keywords",
     startAll: "Enrich all saved icons",
-    retry: "Run again",
     pause: "Pause",
     resume: "Resume",
     stop: "Stop",
@@ -159,19 +180,23 @@ const COPY = {
     remaining: "Remaining",
     noLanguages: "Select at least one language.",
     unavailable:
-      "Chrome's built-in Prompt or Translator API is unavailable for one of the selected languages.",
+      "Chrome's built-in Prompt or Translator API is unavailable on this device.",
     error: (message: string) => `Keyword generation failed: ${message}`,
+    modelStatus: {
+      idle: "Not prepared",
+      preparing: "Preparing…",
+      downloading: "Downloading…",
+      ready: "Ready",
+      error: "Failed",
+    } satisfies Record<ModelPreparationStatus, string>,
     status: {
       idle: "Ready",
-      checking: "Checking built-in AI language support…",
-      downloading: "Downloading a browser language model…",
-      preparing: "Preparing keyword and translation models…",
       running: "Generating and translating keywords…",
       pausing: "Finishing the current batch…",
       paused: "Paused",
       stopped: "Stopped",
       completed: "Keyword generation complete",
-      unavailable: "Required browser AI unavailable",
+      unavailable: "Browser AI unavailable",
       error: "Keyword generation failed",
     } satisfies Record<KeywordStatus, string>,
   },
@@ -185,9 +210,18 @@ const COPY = {
     allScope: "Minden mentett ikon (meglévők bővítése)",
     languages: "Nyelvek és kulcsszavak száma",
     keywordCount: "Kulcsszó",
+    models: "Böngésző AI modellek előkészítése",
+    modelDescription:
+      "A Chrome minden letölthető modellhez külön valódi kattintást igényel. Készítsd elő az összes sort, majd indítsd a generálást.",
+    promptModel: "Angol kulcsszómodell",
+    promptModelDetail: "A szemantikai forráskulcsszavakat készíti",
+    translatorDetail: "Angol nyelvről fordító modell",
+    prepare: "Előkészítés",
+    retryModel: "Újrapróbálás",
+    resetModels: "Modellek alaphelyzetbe",
+    prepareHint: "Indítás előtt készítsd elő az összes szükséges modellt.",
     startMissing: "Hiányzó kulcsszavak készítése",
     startAll: "Minden mentett ikon bővítése",
-    retry: "Újrafuttatás",
     pause: "Szünet",
     resume: "Folytatás",
     stop: "Leállítás",
@@ -196,23 +230,39 @@ const COPY = {
     remaining: "Hátralévő",
     noLanguages: "Válassz ki legalább egy nyelvet.",
     unavailable:
-      "A Chrome beépített Prompt vagy Translator API-ja nem érhető el valamelyik kiválasztott nyelvhez.",
+      "A Chrome beépített Prompt vagy Translator API-ja nem érhető el ezen az eszközön.",
     error: (message: string) => `A kulcsszavak készítése sikertelen: ${message}`,
+    modelStatus: {
+      idle: "Nincs előkészítve",
+      preparing: "Előkészítés…",
+      downloading: "Letöltés…",
+      ready: "Kész",
+      error: "Sikertelen",
+    } satisfies Record<ModelPreparationStatus, string>,
     status: {
       idle: "Indításra kész",
-      checking: "A beépített AI nyelvi támogatásának ellenőrzése…",
-      downloading: "Böngészőben futó nyelvi modell letöltése…",
-      preparing: "Kulcsszó- és fordítómodellek előkészítése…",
       running: "Kulcsszavak készítése és fordítása…",
       pausing: "Az aktuális köteg befejezése…",
       paused: "Szüneteltetve",
       stopped: "Leállítva",
       completed: "A kulcsszavak elkészültek",
-      unavailable: "A szükséges böngésző AI nem érhető el",
+      unavailable: "A böngésző AI nem érhető el",
       error: "A kulcsszavak készítése sikertelen",
     } satisfies Record<KeywordStatus, string>,
   },
 } as const
+
+function createIdleModelState(): ModelPreparationState {
+  return { status: "idle", progress: 0, error: "" }
+}
+
+function createTranslatorModelStates() {
+  return Object.fromEntries(
+    AI_KEYWORD_LANGUAGES.filter((language) => language.code !== "en").map(
+      (language) => [language.code, createIdleModelState()]
+    )
+  ) as Record<string, ModelPreparationState>
+}
 
 function getLanguageModelFactory() {
   return (
@@ -228,6 +278,10 @@ function getTranslatorFactory() {
       Translator?: TranslatorFactory
     }
   ).Translator
+}
+
+function progressPercent(loaded: number) {
+  return Math.min(Math.max(Math.round(loaded * 100), 0), 100)
 }
 
 async function translateKeywordBlock(
@@ -350,11 +404,7 @@ async function generateKeywordBatch(options: {
     AI_KEYWORD_PROMPT_TIMEOUT_MS
   )
 
-  const parsed = parseAiKeywordResponse(
-    response,
-    inputIcons,
-    candidateCount
-  )
+  const parsed = parseAiKeywordResponse(response, inputIcons, candidateCount)
   const seedById = new Map(
     parsed.results.map((result) => [iconId(result), result] as const)
   )
@@ -424,6 +474,19 @@ async function generateKeywordBatch(options: {
   return { results, missingIcons }
 }
 
+function ModelStatusIcon({ status }: { status: ModelPreparationStatus }) {
+  if (status === "ready") {
+    return <CheckCircle2 className="size-4" />
+  }
+  if (status === "error") {
+    return <CircleAlert className="size-4" />
+  }
+  if (status === "preparing" || status === "downloading") {
+    return <LoaderCircle className="size-4 animate-spin" />
+  }
+  return <Download className="size-4" />
+}
+
 export function AiKeywordsPanel() {
   const { data, updateIconsKeywords } = useIconSorter()
   const { i18n } = useTranslation()
@@ -436,8 +499,12 @@ export function AiKeywordsPanel() {
     KeywordLanguageSetting[]
   >(() => DEFAULT_AI_KEYWORD_LANGUAGE_SETTINGS.map((setting) => ({ ...setting })))
   const [status, setStatus] = useState<KeywordStatus>("idle")
-  const [downloadProgress, setDownloadProgress] = useState(0)
-  const [downloadLanguage, setDownloadLanguage] = useState("")
+  const [promptModelState, setPromptModelState] = useState<ModelPreparationState>(
+    createIdleModelState
+  )
+  const [translatorModelStates, setTranslatorModelStates] = useState<
+    Record<string, ModelPreparationState>
+  >(createTranslatorModelStates)
   const [progress, setProgress] = useState<KeywordProgress>({
     total: 0,
     processed: 0,
@@ -457,6 +524,8 @@ export function AiKeywordsPanel() {
   const sessionRef = useRef<LanguageModelSession | null>(null)
   const translatorsRef = useRef(new Map<string, TranslatorSession>())
   const translationCacheRef = useRef<TranslationCache>(new Map())
+  const modelControllersRef = useRef(new Map<string, AbortController>())
+  const modelPreparingRef = useRef(new Set<string>())
   const abortRef = useRef<AbortController | null>(null)
   const pauseRequestedRef = useRef(false)
   const stopRequestedRef = useRef(false)
@@ -470,17 +539,48 @@ export function AiKeywordsPanel() {
     () => selectedKeywordLanguages(languageSettings),
     [languageSettings]
   )
+  const selectedTranslatorDefinitions = useMemo(
+    () =>
+      selectedLanguages
+        .filter((setting) => setting.code !== "en")
+        .map((setting) =>
+          AI_KEYWORD_LANGUAGES.find(
+            (definition) => definition.code === setting.code
+          )
+        )
+        .filter((definition) => Boolean(definition)),
+    [selectedLanguages]
+  )
   const percentage = progress.total
     ? Math.min((progress.processed / progress.total) * 100, 100)
     : 0
 
+  const updateTranslatorModelState = useCallback(
+    (code: string, update: Partial<ModelPreparationState>) => {
+      setTranslatorModelStates((current) => ({
+        ...current,
+        [code]: { ...(current[code] ?? createIdleModelState()), ...update },
+      }))
+    },
+    []
+  )
+
   const destroyModels = useCallback(() => {
+    for (const controller of modelControllersRef.current.values()) {
+      controller.abort()
+    }
+    modelControllersRef.current.clear()
+    modelPreparingRef.current.clear()
+
     sessionRef.current?.destroy()
     sessionRef.current = null
     for (const translator of translatorsRef.current.values()) {
       translator.destroy()
     }
     translatorsRef.current.clear()
+
+    setPromptModelState(createIdleModelState())
+    setTranslatorModelStates(createTranslatorModelStates())
   }, [])
 
   const applyResults = useCallback(
@@ -568,6 +668,176 @@ export function AiKeywordsPanel() {
     destroyModels()
   }, [applyResults, destroyModels])
 
+  const preparePromptModel = useCallback(() => {
+    if (
+      runningRef.current ||
+      sessionRef.current ||
+      modelPreparingRef.current.has(PROMPT_MODEL_KEY)
+    ) {
+      return
+    }
+
+    const factory = getLanguageModelFactory()
+    if (!factory) {
+      setPromptModelState({
+        status: "error",
+        progress: 0,
+        error: copy.unavailable,
+      })
+      return
+    }
+
+    const selected = selectedKeywordLanguages(languageSettings)
+    candidateCountRef.current = getAiKeywordCandidateCount(selected)
+    const controller = new AbortController()
+    modelControllersRef.current.set(PROMPT_MODEL_KEY, controller)
+    modelPreparingRef.current.add(PROMPT_MODEL_KEY)
+    setPromptModelState({ status: "preparing", progress: 0, error: "" })
+
+    const modelPromise = startAiKeywordModelCreation({
+      label: copy.promptModel,
+      timeoutMs: AI_KEYWORD_PROMPT_MODEL_TIMEOUT_MS,
+      parentSignal: controller.signal,
+      create: (signal) =>
+        factory.create({
+          ...MODEL_CAPABILITIES,
+          signal,
+          initialPrompts: [
+            {
+              role: "system",
+              content: createAiKeywordSystemPrompt(candidateCountRef.current),
+            },
+          ],
+          monitor(monitor) {
+            monitor.addEventListener("downloadprogress", (event) => {
+              setPromptModelState({
+                status: "downloading",
+                progress: progressPercent(event.loaded),
+                error: "",
+              })
+            })
+          },
+        }),
+      destroy: (session) => session.destroy(),
+    })
+
+    void modelPromise
+      .then((session) => {
+        sessionRef.current = session
+        setPromptModelState({ status: "ready", progress: 100, error: "" })
+      })
+      .catch((error) => {
+        if (isAbortError(error)) {
+          setPromptModelState(createIdleModelState())
+          return
+        }
+        setPromptModelState({
+          status: "error",
+          progress: 0,
+          error: error instanceof Error ? error.message : String(error),
+        })
+      })
+      .finally(() => {
+        modelPreparingRef.current.delete(PROMPT_MODEL_KEY)
+        modelControllersRef.current.delete(PROMPT_MODEL_KEY)
+      })
+  }, [copy.promptModel, copy.unavailable, languageSettings])
+
+  const prepareTranslatorModel = useCallback(
+    (languageCode: string) => {
+      if (
+        runningRef.current ||
+        translatorsRef.current.has(languageCode) ||
+        modelPreparingRef.current.has(languageCode)
+      ) {
+        return
+      }
+
+      const factory = getTranslatorFactory()
+      const definition = AI_KEYWORD_LANGUAGES.find(
+        (candidate) => candidate.code === languageCode
+      )
+      const label = definition?.nativeLabel ?? languageCode
+      if (!factory) {
+        updateTranslatorModelState(languageCode, {
+          status: "error",
+          progress: 0,
+          error: copy.unavailable,
+        })
+        return
+      }
+
+      const controller = new AbortController()
+      modelControllersRef.current.set(languageCode, controller)
+      modelPreparingRef.current.add(languageCode)
+      updateTranslatorModelState(languageCode, {
+        status: "preparing",
+        progress: 0,
+        error: "",
+      })
+
+      const modelPromise = startAiKeywordModelCreation({
+        label: `${label} (${languageCode})`,
+        timeoutMs: AI_KEYWORD_TRANSLATOR_MODEL_TIMEOUT_MS,
+        parentSignal: controller.signal,
+        create: (signal) =>
+          factory.create({
+            sourceLanguage: "en",
+            targetLanguage: languageCode,
+            signal,
+            monitor(monitor) {
+              monitor.addEventListener("downloadprogress", (event) => {
+                updateTranslatorModelState(languageCode, {
+                  status: "downloading",
+                  progress: progressPercent(event.loaded),
+                  error: "",
+                })
+              })
+            },
+          }),
+        destroy: (translator) => translator.destroy(),
+      })
+
+      void modelPromise
+        .then((translator) => {
+          translatorsRef.current.set(languageCode, translator)
+          updateTranslatorModelState(languageCode, {
+            status: "ready",
+            progress: 100,
+            error: "",
+          })
+        })
+        .catch((error) => {
+          if (isAbortError(error)) {
+            updateTranslatorModelState(languageCode, createIdleModelState())
+            return
+          }
+          updateTranslatorModelState(languageCode, {
+            status: "error",
+            progress: 0,
+            error: error instanceof Error ? error.message : String(error),
+          })
+        })
+        .finally(() => {
+          modelPreparingRef.current.delete(languageCode)
+          modelControllersRef.current.delete(languageCode)
+        })
+    },
+    [copy.unavailable, updateTranslatorModelState]
+  )
+
+  const requiredModelsReady =
+    promptModelState.status === "ready" &&
+    selectedTranslatorDefinitions.every(
+      (definition) =>
+        definition && translatorModelStates[definition.code]?.status === "ready"
+    )
+  const modelPreparationStarted =
+    promptModelState.status !== "idle" ||
+    Object.values(translatorModelStates).some(
+      (modelState) => modelState.status !== "idle"
+    )
+
   const beginRun = useCallback(async () => {
     if (runningRef.current) {
       return
@@ -580,14 +850,17 @@ export function AiKeywordsPanel() {
       return
     }
 
-    const modelFactory = getLanguageModelFactory()
-    const translatedLanguages = selected.filter(
-      (setting) => setting.code !== "en"
-    )
-    const translatorFactory = getTranslatorFactory()
-    if (!modelFactory || (translatedLanguages.length > 0 && !translatorFactory)) {
-      setStatus("unavailable")
+    if (!sessionRef.current) {
+      setErrorMessage(copy.prepareHint)
+      setStatus("error")
       return
+    }
+    for (const setting of selected) {
+      if (setting.code !== "en" && !translatorsRef.current.has(setting.code)) {
+        setErrorMessage(copy.prepareHint)
+        setStatus("error")
+        return
+      }
     }
 
     runningRef.current = true
@@ -595,8 +868,6 @@ export function AiKeywordsPanel() {
     stopRequestedRef.current = false
     setErrorMessage("")
     setCurrentResult(null)
-    setDownloadProgress(0)
-    setDownloadLanguage("")
     setProgress({
       total: targets.length,
       processed: 0,
@@ -611,81 +882,10 @@ export function AiKeywordsPanel() {
     translationCacheRef.current = new Map()
 
     const controller = new AbortController()
-    const creationController = new AbortController()
-    const abortCreation = () =>
-      creationController.abort(controller.signal.reason)
-    controller.signal.addEventListener("abort", abortCreation, { once: true })
     abortRef.current = controller
+    setStatus("running")
 
     try {
-      setStatus("preparing")
-      setDownloadLanguage("AI models")
-
-      const translatorDefinitions = translatedLanguages.map((setting) => {
-        const definition = AI_KEYWORD_LANGUAGES.find(
-          (candidate) => candidate.code === setting.code
-        )
-        return {
-          code: setting.code,
-          label: definition?.nativeLabel ?? setting.code,
-        }
-      })
-
-      const models = await createAiKeywordModels({
-        translators: translatorDefinitions,
-        createSession: () =>
-          modelFactory.create({
-            ...MODEL_CAPABILITIES,
-            signal: creationController.signal,
-            initialPrompts: [
-              {
-                role: "system",
-                content: createAiKeywordSystemPrompt(candidateCountRef.current),
-              },
-            ],
-            monitor(monitor) {
-              monitor.addEventListener("downloadprogress", (event) => {
-                setStatus("downloading")
-                setDownloadLanguage("English keyword model")
-                setDownloadProgress(Math.round(event.loaded * 100))
-              })
-            },
-          }),
-        createTranslator: (languageCode) => {
-          if (!translatorFactory) {
-            throw new Error("translator-api-unavailable")
-          }
-
-          const definition = AI_KEYWORD_LANGUAGES.find(
-            (candidate) => candidate.code === languageCode
-          )
-          const label = definition?.nativeLabel ?? languageCode
-          return translatorFactory.create({
-            sourceLanguage: "en",
-            targetLanguage: languageCode,
-            signal: creationController.signal,
-            monitor(monitor) {
-              monitor.addEventListener("downloadprogress", (event) => {
-                setStatus("downloading")
-                setDownloadLanguage(label)
-                setDownloadProgress(Math.round(event.loaded * 100))
-              })
-            },
-          })
-        },
-        destroySession: (session) => session.destroy(),
-        destroyTranslator: (translator) => translator.destroy(),
-        onFailure: (error) => {
-          if (!creationController.signal.aborted) {
-            creationController.abort(error)
-          }
-        },
-      })
-
-      sessionRef.current = models.session
-      translatorsRef.current = models.translators
-      setDownloadLanguage("")
-      setStatus("running")
       await runQueue()
     } catch (error) {
       if (isAbortError(error) || controller.signal.aborted) {
@@ -693,14 +893,14 @@ export function AiKeywordsPanel() {
       } else {
         setErrorMessage(error instanceof Error ? error.message : String(error))
         setStatus("error")
+        destroyModels()
       }
-      destroyModels()
     } finally {
-      controller.signal.removeEventListener("abort", abortCreation)
       abortRef.current = null
       runningRef.current = false
     }
   }, [
+    copy.prepareHint,
     data.groups,
     destroyModels,
     languageSettings,
@@ -728,8 +928,8 @@ export function AiKeywordsPanel() {
       } else {
         setErrorMessage(error instanceof Error ? error.message : String(error))
         setStatus("error")
+        destroyModels()
       }
-      destroyModels()
     } finally {
       abortRef.current = null
       runningRef.current = false
@@ -747,6 +947,12 @@ export function AiKeywordsPanel() {
     abortRef.current?.abort()
     destroyModels()
     setStatus("stopped")
+  }
+
+  function resetModels() {
+    destroyModels()
+    setStatus("idle")
+    setErrorMessage("")
   }
 
   function setLanguageEnabled(code: string, enabled: boolean) {
@@ -775,17 +981,76 @@ export function AiKeywordsPanel() {
     [destroyModels]
   )
 
-  const isBusy =
-    status === "checking" ||
-    status === "downloading" ||
-    status === "preparing" ||
-    status === "running" ||
-    status === "pausing"
-  const configurationLocked = isBusy || status === "paused"
+  const generationBusy = status === "running" || status === "pausing"
+  const configurationLocked =
+    generationBusy || status === "paused" || modelPreparationStarted
   const canStart =
-    !configurationLocked && targets.length > 0 && selectedLanguages.length > 0
+    !generationBusy &&
+    status !== "paused" &&
+    targets.length > 0 &&
+    selectedLanguages.length > 0 &&
+    requiredModelsReady
   const startLabel =
     scope === "missing" ? copy.startMissing : copy.startAll
+
+  function renderModelRow(options: {
+    key: string
+    title: string
+    detail: string
+    state: ModelPreparationState
+    onPrepare: () => void
+  }) {
+    const { key, title, detail, state, onPrepare } = options
+    const busy = state.status === "preparing" || state.status === "downloading"
+    const buttonLabel = state.status === "error" ? copy.retryModel : copy.prepare
+
+    return (
+      <div key={key} className="grid gap-3 rounded-lg border bg-background p-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="grid min-w-0 flex-1 gap-0.5">
+            <div className="truncate text-sm font-medium">{title}</div>
+            <div className="text-xs text-muted-foreground">{detail}</div>
+          </div>
+          <Badge className="gap-1.5 bg-background">
+            <ModelStatusIcon status={state.status} />
+            {copy.modelStatus[state.status]}
+          </Badge>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={busy || state.status === "ready" || generationBusy}
+            onClick={onPrepare}
+          >
+            {busy ? (
+              <LoaderCircle className="animate-spin" />
+            ) : (
+              <Download />
+            )}
+            {buttonLabel}
+          </Button>
+        </div>
+
+        {(busy || state.progress > 0) && (
+          <div className="grid gap-1">
+            <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+              <div
+                className="h-full bg-foreground transition-[width]"
+                style={{ width: `${state.progress}%` }}
+              />
+            </div>
+            <div className="text-right text-xs text-muted-foreground">
+              {state.progress}%
+            </div>
+          </div>
+        )}
+
+        {state.error && (
+          <p className="text-xs text-destructive">{state.error}</p>
+        )}
+      </div>
+    )
+  }
 
   return (
     <section className="overflow-hidden rounded-xl border bg-background">
@@ -813,17 +1078,12 @@ export function AiKeywordsPanel() {
               disabled={!canStart}
               onClick={() => void beginRun()}
             >
-              {isBusy ? (
+              {generationBusy ? (
                 <LoaderCircle className="animate-spin" />
               ) : (
                 <KeyRound />
               )}
-              {status === "completed" ||
-              status === "stopped" ||
-              status === "error" ||
-              status === "unavailable"
-                ? copy.retry
-                : startLabel}
+              {startLabel}
             </Button>
           )}
         </div>
@@ -906,36 +1166,74 @@ export function AiKeywordsPanel() {
             )}
           </div>
         </div>
+
+        <div className="grid gap-3 rounded-xl border bg-muted/20 p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="grid gap-1">
+              <div className="font-medium">{copy.models}</div>
+              <p className="text-sm text-muted-foreground">
+                {copy.modelDescription}
+              </p>
+            </div>
+            {modelPreparationStarted && (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={generationBusy}
+                onClick={resetModels}
+              >
+                <RotateCcw />
+                {copy.resetModels}
+              </Button>
+            )}
+          </div>
+
+          <div className="grid gap-2 lg:grid-cols-2">
+            {renderModelRow({
+              key: PROMPT_MODEL_KEY,
+              title: copy.promptModel,
+              detail: copy.promptModelDetail,
+              state: promptModelState,
+              onPrepare: preparePromptModel,
+            })}
+            {selectedTranslatorDefinitions.map((definition) =>
+              definition
+                ? renderModelRow({
+                    key: definition.code,
+                    title: definition.nativeLabel,
+                    detail: `${copy.translatorDetail} · en → ${definition.code}`,
+                    state:
+                      translatorModelStates[definition.code] ??
+                      createIdleModelState(),
+                    onPrepare: () => prepareTranslatorModel(definition.code),
+                  })
+                : null
+            )}
+          </div>
+
+          {!requiredModelsReady && selectedLanguages.length > 0 && (
+            <p className="text-sm text-muted-foreground">{copy.prepareHint}</p>
+          )}
+        </div>
       </div>
 
       {status !== "idle" && (
         <div className="grid gap-4 border-t p-4 sm:p-5" aria-live="polite">
           <div className="grid gap-2">
             <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
-              <span className="font-medium">
-                {copy.status[status]}
-                {downloadLanguage ? ` · ${downloadLanguage}` : ""}
-              </span>
-              {status === "downloading" ? (
-                <span className="text-muted-foreground">
-                  {downloadProgress}%
-                </span>
-              ) : progress.total > 0 ? (
+              <span className="font-medium">{copy.status[status]}</span>
+              {progress.total > 0 && (
                 <span className="text-muted-foreground">
                   {progress.processed.toLocaleString(locale)} /{" "}
                   {progress.total.toLocaleString(locale)}
                 </span>
-              ) : null}
+              )}
             </div>
             <div className="h-2 overflow-hidden rounded-full bg-muted">
               <div
                 className="h-full bg-foreground transition-[width]"
-                style={{
-                  width:
-                    status === "downloading"
-                      ? `${downloadProgress}%`
-                      : `${percentage}%`,
-                }}
+                style={{ width: `${percentage}%` }}
               />
             </div>
           </div>
@@ -1010,16 +1308,6 @@ export function AiKeywordsPanel() {
                 <Pause />
                 {copy.pause}
               </Button>
-              <Button variant="destructive" onClick={stopRun}>
-                <Square />
-                {copy.stop}
-              </Button>
-            </div>
-          )}
-          {(status === "checking" ||
-            status === "downloading" ||
-            status === "preparing") && (
-            <div className="flex justify-end">
               <Button variant="destructive" onClick={stopRun}>
                 <Square />
                 {copy.stop}
