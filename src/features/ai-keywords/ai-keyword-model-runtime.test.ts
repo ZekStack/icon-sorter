@@ -2,7 +2,8 @@ import { describe, expect, it, vi } from "vitest"
 
 import {
   AiKeywordModelCreationError,
-  createAiKeywordModels,
+  AiKeywordModelTimeoutError,
+  startAiKeywordModelCreation,
 } from "@/features/ai-keywords/ai-keyword-model-runtime"
 
 function deferred<T>() {
@@ -12,80 +13,84 @@ function deferred<T>() {
     resolve = promiseResolve
     reject = promiseReject
   })
-
   return { promise, resolve, reject }
 }
 
-describe("AI keyword model startup", () => {
-  it("starts the prompt model and every translator before awaiting", async () => {
+describe("AI keyword model preparation", () => {
+  it("invokes create synchronously for one trusted interaction", async () => {
+    const pending = deferred<{ id: string }>()
     const calls: string[] = []
-    const prompt = deferred<{ id: string }>()
-    const hungarian = deferred<{ id: string }>()
-    const romanian = deferred<{ id: string }>()
 
-    const modelsPromise = createAiKeywordModels({
-      translators: [
-        { code: "hu", label: "Magyar" },
-        { code: "ro", label: "Română" },
-      ],
-      createSession: () => {
-        calls.push("prompt")
-        return prompt.promise
+    const modelPromise = startAiKeywordModelCreation({
+      label: "Magyar",
+      timeoutMs: 1_000,
+      create: () => {
+        calls.push("create")
+        return pending.promise
       },
-      createTranslator: (languageCode) => {
-        calls.push(languageCode)
-        return languageCode === "hu" ? hungarian.promise : romanian.promise
-      },
-      destroySession: vi.fn(),
-      destroyTranslator: vi.fn(),
     })
 
-    expect(calls).toEqual(["prompt", "hu", "ro"])
-
-    prompt.resolve({ id: "prompt" })
-    hungarian.resolve({ id: "hu" })
-    romanian.resolve({ id: "ro" })
-
-    const models = await modelsPromise
-    expect(models.session).toEqual({ id: "prompt" })
-    expect([...models.translators]).toEqual([
-      ["hu", { id: "hu" }],
-      ["ro", { id: "ro" }],
-    ])
+    expect(calls).toEqual(["create"])
+    pending.resolve({ id: "hu" })
+    await expect(modelPromise).resolves.toEqual({ id: "hu" })
   })
 
-  it("reports the failing language and destroys partial models", async () => {
-    const promptSession = { id: "prompt" }
-    const germanTranslator = { id: "de" }
-    const destroySession = vi.fn()
-    const destroyTranslator = vi.fn()
-    const onFailure = vi.fn()
-
-    const modelsPromise = createAiKeywordModels({
-      translators: [
-        { code: "hu", label: "Magyar" },
-        { code: "de", label: "Deutsch" },
-      ],
-      createSession: async () => promptSession,
-      createTranslator: async (languageCode) => {
-        if (languageCode === "hu") {
-          throw new Error("Requires a user gesture")
-        }
-        return germanTranslator
+  it("wraps synchronous browser creation failures with the model label", async () => {
+    const modelPromise = startAiKeywordModelCreation({
+      label: "Deutsch (de)",
+      timeoutMs: 1_000,
+      create: () => {
+        throw new DOMException("Language pack limit exceeded", "OperationError")
       },
-      destroySession,
-      destroyTranslator,
-      onFailure,
     })
 
-    await expect(modelsPromise).rejects.toMatchObject({
+    await expect(modelPromise).rejects.toMatchObject({
       name: "AiKeywordModelCreationError",
-      model: "translator",
-      languageCode: "hu",
-      message: "Magyar (hu): Requires a user gesture",
+      label: "Deutsch (de)",
+      message: "Deutsch (de): Language pack limit exceeded",
     } satisfies Partial<AiKeywordModelCreationError>)
-    expect(onFailure).toHaveBeenCalledTimes(1)
-    expect(destroySession).toHaveBeenCalledWith(promptSession)
-    expect(destroyTranslator).toHaveBeenCalledWith(germanTranslator)
+  })
+
+  it("aborts and reports model preparation timeouts", async () => {
+    vi.useFakeTimers()
+    const observedSignals: AbortSignal[] = []
+
+    const modelPromise = startAiKeywordModelCreation({
+      label: "Română (ro)",
+      timeoutMs: 5_000,
+      create: (signal) => {
+        observedSignals.push(signal)
+        return new Promise(() => undefined)
+      },
+    })
+
+    await vi.advanceTimersByTimeAsync(5_000)
+    await expect(modelPromise).rejects.toMatchObject({
+      name: "AiKeywordModelTimeoutError",
+      label: "Română (ro)",
+    } satisfies Partial<AiKeywordModelTimeoutError>)
+    expect(observedSignals[0]?.aborted).toBe(true)
+    vi.useRealTimers()
+  })
+
+  it("destroys a model that resolves after the timeout", async () => {
+    vi.useFakeTimers()
+    const pending = deferred<{ id: string }>()
+    const destroy = vi.fn()
+
+    const modelPromise = startAiKeywordModelCreation({
+      label: "English keyword model",
+      timeoutMs: 5_000,
+      create: () => pending.promise,
+      destroy,
+    })
+
+    await vi.advanceTimersByTimeAsync(5_000)
+    await expect(modelPromise).rejects.toBeInstanceOf(AiKeywordModelTimeoutError)
+
+    pending.resolve({ id: "late" })
+    await Promise.resolve()
+    expect(destroy).toHaveBeenCalledWith({ id: "late" })
+    vi.useRealTimers()
   })
 })
